@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "5765431920",
+    "project_id": "choose-me-l1izsi",
+    "storage_bucket": "choose-me-l1izsi.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:5765431920:android:a6217d6df6d8dfa5ef2ab5",
+        "android_client_info": {
+          "package_name": "com.mycompany.chooseme"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "5765431920-301gkn3aeb7bn9j4oedp4su325op75ga.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDOlT-A1csMjvy8pruIqiERMczCXRaNaFs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "5765431920-301gkn3aeb7bn9j4oedp4su325op75ga.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
