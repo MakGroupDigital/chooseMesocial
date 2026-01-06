@@ -1,0 +1,17 @@
+CMake Error:
+  Running
+
+   '/Users/mac/Library/Android/sdk/cmake/3.22.1/bin/ninja' '-C' '/Users/mac/choose_me/build/.cxx/release/2q6t2670/arm64-v8a/CMakeFiles/CMakeTmp' '-t' 'recompact'
+
+  failed with:
+
+   ninja: error: loading 'build.ninja': No such file or directory
+
+
+
+CMake Error at /Users/mac/Library/Android/sdk/cmake/3.22.1/share/cmake-3.22/Modules/CMakeTestCCompiler.cmake:56 (try_compile):
+  Failed to generate test project build system.
+Call Stack (most recent call first):
+  CMakeLists.txt
+
+
