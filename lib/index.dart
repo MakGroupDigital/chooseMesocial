@@ -99,3 +99,10 @@ export '/features/common/no_access/noacces_widget.dart' show NoaccesWidget;
 export '/features/common/feature_unavailable/fonction_no_dispo_widget.dart' show FonctionNoDispoWidget;
 export '/features/common/success/ok_widget.dart' show OkWidget;
 export '/features/common/region_restriction/rwandarestruction_widget.dart' show RwandarestructionWidget;
+
+// === LIVE MATCH ===
+export '/features/live_match/matches_list/matches_list_widget.dart' show MatchesListWidget;
+export '/features/live_match/match_detail/match_detail_widget.dart' show MatchDetailWidget;
+export '/features/live_match/wallet/wallet_widget.dart' show WalletWidget;
+export '/features/live_match/wallet/withdrawal_widget.dart' show WithdrawalWidget;
+export '/features/live_match/leaderboard/leaderboard_widget.dart' show LeaderboardWidget;

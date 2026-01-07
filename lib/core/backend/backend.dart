@@ -23,6 +23,11 @@ import 'schema/listeutilisateur_record.dart';
 import 'schema/like_record.dart';
 import 'schema/reportage_record.dart';
 import 'schema/moderation_record.dart';
+import 'schema/match_record.dart';
+import 'schema/pronostic_record.dart';
+import 'schema/wallet_record.dart';
+import 'schema/transaction_record.dart';
+import 'schema/withdrawal_record.dart';
 import 'dart:async';
 import 'package:infinite_scroll_pagination/infinite_scroll_pagination.dart';
 
@@ -51,6 +56,11 @@ export 'schema/listeutilisateur_record.dart';
 export 'schema/like_record.dart';
 export 'schema/reportage_record.dart';
 export 'schema/moderation_record.dart';
+export 'schema/match_record.dart';
+export 'schema/pronostic_record.dart';
+export 'schema/wallet_record.dart';
+export 'schema/transaction_record.dart';
+export 'schema/withdrawal_record.dart';
 
 /// Functions to query UserRecords (as a Stream and as a Future).
 Future<int> queryUserRecordCount({
@@ -1505,6 +1515,154 @@ Future<FFFirestorePage<ModerationRecord>> queryModerationRecordPage({
       }
       return page;
     });
+
+/// Functions to query MatchRecords (as a Stream and as a Future).
+Future<int> queryMatchRecordCount({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+}) =>
+    queryCollectionCount(
+      MatchRecord.collection,
+      queryBuilder: queryBuilder,
+      limit: limit,
+    );
+
+Stream<List<MatchRecord>> queryMatchRecord({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+  bool singleRecord = false,
+}) =>
+    queryCollection(
+      MatchRecord.collection,
+      MatchRecord.fromSnapshot,
+      queryBuilder: queryBuilder,
+      limit: limit,
+      singleRecord: singleRecord,
+    );
+
+Future<List<MatchRecord>> queryMatchRecordOnce({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+  bool singleRecord = false,
+}) =>
+    queryCollectionOnce(
+      MatchRecord.collection,
+      MatchRecord.fromSnapshot,
+      queryBuilder: queryBuilder,
+      limit: limit,
+      singleRecord: singleRecord,
+    );
+
+/// Functions to query PronosticRecords (as a Stream and as a Future).
+Future<int> queryPronosticRecordCount({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+}) =>
+    queryCollectionCount(
+      PronosticRecord.collection,
+      queryBuilder: queryBuilder,
+      limit: limit,
+    );
+
+Stream<List<PronosticRecord>> queryPronosticRecord({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+  bool singleRecord = false,
+}) =>
+    queryCollection(
+      PronosticRecord.collection,
+      PronosticRecord.fromSnapshot,
+      queryBuilder: queryBuilder,
+      limit: limit,
+      singleRecord: singleRecord,
+    );
+
+Future<List<PronosticRecord>> queryPronosticRecordOnce({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+  bool singleRecord = false,
+}) =>
+    queryCollectionOnce(
+      PronosticRecord.collection,
+      PronosticRecord.fromSnapshot,
+      queryBuilder: queryBuilder,
+      limit: limit,
+      singleRecord: singleRecord,
+    );
+
+/// Functions to query WalletRecords (as a Stream and as a Future).
+Future<int> queryWalletRecordCount({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+}) =>
+    queryCollectionCount(
+      WalletRecord.collection,
+      queryBuilder: queryBuilder,
+      limit: limit,
+    );
+
+Stream<List<WalletRecord>> queryWalletRecord({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+  bool singleRecord = false,
+}) =>
+    queryCollection(
+      WalletRecord.collection,
+      WalletRecord.fromSnapshot,
+      queryBuilder: queryBuilder,
+      limit: limit,
+      singleRecord: singleRecord,
+    );
+
+Future<List<WalletRecord>> queryWalletRecordOnce({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+  bool singleRecord = false,
+}) =>
+    queryCollectionOnce(
+      WalletRecord.collection,
+      WalletRecord.fromSnapshot,
+      queryBuilder: queryBuilder,
+      limit: limit,
+      singleRecord: singleRecord,
+    );
+
+/// Functions to query WithdrawalRecords (as a Stream and as a Future).
+Future<int> queryWithdrawalRecordCount({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+}) =>
+    queryCollectionCount(
+      WithdrawalRecord.collection,
+      queryBuilder: queryBuilder,
+      limit: limit,
+    );
+
+Stream<List<WithdrawalRecord>> queryWithdrawalRecord({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+  bool singleRecord = false,
+}) =>
+    queryCollection(
+      WithdrawalRecord.collection,
+      WithdrawalRecord.fromSnapshot,
+      queryBuilder: queryBuilder,
+      limit: limit,
+      singleRecord: singleRecord,
+    );
+
+Future<List<WithdrawalRecord>> queryWithdrawalRecordOnce({
+  Query Function(Query)? queryBuilder,
+  int limit = -1,
+  bool singleRecord = false,
+}) =>
+    queryCollectionOnce(
+      WithdrawalRecord.collection,
+      WithdrawalRecord.fromSnapshot,
+      queryBuilder: queryBuilder,
+      limit: limit,
+      singleRecord: singleRecord,
+    );
 
 Future<int> queryCollectionCount(
   Query collection, {

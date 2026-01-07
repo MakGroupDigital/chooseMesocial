@@ -444,6 +444,39 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
               name: NotificationWidget.routeName,
               path: NotificationWidget.routePath,
               builder: (context, params) => const NotificationWidget(),
+            ),
+            // === LIVE MATCH ROUTES ===
+            FFRoute(
+              name: MatchesListWidget.routeName,
+              path: '/matches',
+              requireAuth: true,
+              builder: (context, params) => const MatchesListWidget(),
+            ),
+            FFRoute(
+              name: MatchDetailWidget.routeName,
+              path: '/match-detail/:matchId',
+              requireAuth: true,
+              builder: (context, params) => MatchDetailWidget(
+                matchId: params.getParam('matchId', ParamType.String),
+                showPrediction: params.getParam('showPrediction', ParamType.String),
+              ),
+            ),
+            FFRoute(
+              name: WalletWidget.routeName,
+              path: '/wallet',
+              requireAuth: true,
+              builder: (context, params) => const WalletWidget(),
+            ),
+            FFRoute(
+              name: WithdrawalWidget.routeName,
+              path: '/withdrawal',
+              requireAuth: true,
+              builder: (context, params) => const WithdrawalWidget(),
+            ),
+            FFRoute(
+              name: LeaderboardWidget.routeName,
+              path: '/leaderboard',
+              builder: (context, params) => const LeaderboardWidget(),
             )
           ].map((r) => r.toRoute(appStateNotifier)).toList(),
         ),
