@@ -53,11 +53,12 @@ class FootballApiService {
       }
 
       final today = DateTime.now();
-      final dateStr = DateFormat('yyyy-MM-dd').format(today);
-      
+      final dateFrom = DateFormat('yyyy-MM-dd').format(today);
+      final dateTo = DateFormat('yyyy-MM-dd').format(today.add(const Duration(days: 7)));
       
       // Utilisation du helper _getUri pour gérer le proxy CORS sur le Web
-      final uri = _getUri('/matches?dateFrom=$dateStr&dateTo=$dateStr');
+      // On récupère les matchs sur une semaine pour être sûr d'avoir des données
+      final uri = _getUri('/matches?dateFrom=$dateFrom&dateTo=$dateTo');
       final response = await http.get(
         uri, 
         headers: _headers,
