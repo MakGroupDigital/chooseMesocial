@@ -431,6 +431,18 @@ class _ProfilUTWidgetState extends State<ProfilUTWidget>
       child: Column(
         children: [
           _buildActionButton(
+            icon: Icons.account_balance_wallet,
+            label: 'Mon Portefeuille',
+            onTap: () => context.pushNamed(WalletWidget.routeName),
+          ),
+          const SizedBox(height: 12),
+          _buildActionButton(
+            icon: Icons.emoji_events,
+            label: 'Classement',
+            onTap: () => context.pushNamed(LeaderboardWidget.routeName),
+          ),
+          const SizedBox(height: 12),
+          _buildActionButton(
             icon: Icons.notifications,
             label: 'Notifications',
             onTap: () => context.pushNamed(NotificationWidget.routeName),

@@ -43,7 +43,7 @@ class _ModernOnboardingWidgetState extends State<ModernOnboardingWidget>
           'Des centaines de clubs et recruteurs professionnels recherchent activement de nouveaux talents comme toi.',
       icon: Icons.connect_without_contact,
       gradient: const [Color(0xFF36B4FF), Color(0xFF6A11CB)],
-      image: 'assets/images/full-shot-smiley-kid-sitting-stairs.jpg',
+      image: 'assets/images/childrens-playing-football.jpg',
     ),
     OnboardingPage(
       title: 'Réalise tes Rêves',

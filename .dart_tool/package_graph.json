@@ -34,6 +34,7 @@
         "google_fonts",
         "google_sign_in",
         "html",
+        "http",
         "image_picker",
         "infinite_scroll_pagination",
         "intl",

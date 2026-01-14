@@ -2,7 +2,7 @@
 class ApiConfig {
   // Configuration pour Football-Data.org (API gratuite)
   // Pour obtenir une clé API gratuite : https://www.football-data.org/client/register
-  static const String footballDataApiKey = 'demo'; // Utilise 'demo' pour les tests
+  static const String footballDataApiKey = '5499c9fc2d0d467b8b62bf70708460f8'; // Utilise 'demo' pour les tests
   static const String footballDataBaseUrl = 'https://api.football-data.org/v4';
   
   // Configuration alternative pour API-Sports (si nécessaire)

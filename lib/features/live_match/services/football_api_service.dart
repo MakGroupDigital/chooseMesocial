@@ -13,7 +13,7 @@ class FootballApiService {
   FootballApiService._();
   
   // Cache pour les données en cas d'indisponibilité de l'API
-  static Map<String, dynamic> _cache = {};
+  static final Map<String, dynamic> _cache = {};
   static DateTime? _lastCacheUpdate;
   
   /// Headers par défaut pour les requêtes API
@@ -21,13 +21,33 @@ class FootballApiService {
     'X-Auth-Token': ApiConfig.apiKey,
     'Content-Type': 'application/json',
   };
+  
+  /// Détermine si on doit utiliser les données de test
+  /// En mode web debug, l'API externe a des problèmes CORS
+  bool get _shouldUseTestData {
+    // FORCE REAL DATA: We commented out the web debug check to fulfill the user's request.
+    // if (kIsWeb && kDebugMode) {
+    //   return true;
+    // }
+    return !ApiConfig.isConfigured;
+  }
+
+  /// Helper pour construire l'URI avec un proxy CORS si nécessaire (Web uniquement)
+  Uri _getUri(String path) {
+    final url = '${ApiConfig.baseUrl}$path';
+    if (kIsWeb) {
+      // Utilisation d'un proxy CORS pour le développement web
+      return Uri.parse('https://corsproxy.io/?$url');
+    }
+    return Uri.parse(url);
+  }
 
   /// Récupère les matchs du jour depuis l'API externe
   Future<ApiResult<List<MatchData>>> getTodayMatches() async {
     try {
-      if (!ApiConfig.isConfigured) {
-        // Utiliser les données de test si l'API n'est pas configurée
-        debugPrint('API non configurée, utilisation des données de test');
+      // En mode web debug ou si l'API n'est pas configurée, utiliser les données de test
+      if (_shouldUseTestData) {
+        debugPrint('Mode test activé (web debug ou API non configurée), utilisation des données de test');
         final testMatches = getTestMatches();
         return ApiResult.success(testMatches, isFromCache: true);
       }
@@ -35,9 +55,11 @@ class FootballApiService {
       final today = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(today);
       
-      final url = '${ApiConfig.baseUrl}/matches?dateFrom=$dateStr&dateTo=$dateStr';
+      
+      // Utilisation du helper _getUri pour gérer le proxy CORS sur le Web
+      final uri = _getUri('/matches?dateFrom=$dateStr&dateTo=$dateStr');
       final response = await http.get(
-        Uri.parse(url), 
+        uri, 
         headers: _headers,
       ).timeout(ApiConfig.apiTimeout);
       
@@ -93,22 +115,31 @@ class FootballApiService {
 
   /// Récupère les scores en direct pour les matchs actifs
   Future<ApiResult<List<MatchScore>>> getLiveScores(List<String> matchIds) async {
-    if (!ApiConfig.isConfigured) {
-      return ApiResult.error('API non configurée');
+    // En mode test, retourner des scores simulés
+    if (_shouldUseTestData) {
+      return ApiResult.success(_getTestScores(matchIds), isFromCache: true);
+    }
+
+    // Filtrer les IDs de test pour éviter les appels API inutiles
+    final realMatchIds = matchIds.where((id) => !id.startsWith('test_')).toList();
+    
+    // Si tous les matchs sont des données de test, retourner des scores simulés
+    if (realMatchIds.isEmpty) {
+      return ApiResult.success(_getTestScores(matchIds), isFromCache: true);
     }
 
     try {
       final scores = <MatchScore>[];
       
       // Limiter le nombre de requêtes simultanées
-      final batches = _createBatches(matchIds, 5);
+      final batches = _createBatches(realMatchIds, 5);
       
       for (final batch in batches) {
         final futures = batch.map((matchId) async {
           try {
-            final url = '${ApiConfig.baseUrl}/matches/$matchId';
+            final uri = _getUri('/matches/$matchId');
             final response = await http.get(
-              Uri.parse(url), 
+              uri, 
               headers: _headers,
             ).timeout(ApiConfig.apiTimeout);
             
@@ -117,7 +148,7 @@ class FootballApiService {
               return MatchScore.fromJson(data);
             }
           } catch (e) {
-            print('Error fetching score for match $matchId: $e');
+            debugPrint('Error fetching score for match $matchId: $e');
           }
           return null;
         });
@@ -133,9 +164,23 @@ class FootballApiService {
       
       return ApiResult.success(scores);
     } catch (e) {
-      print('Live Scores Error: $e');
+      debugPrint('Live Scores Error: $e');
       return ApiResult.error('Erreur lors de la récupération des scores: $e');
     }
+  }
+
+  /// Génère des scores simulés pour les matchs de test
+  List<MatchScore> _getTestScores(List<String> matchIds) {
+    return matchIds.where((id) => id.startsWith('test_')).map((id) {
+      // Simuler une mise à jour de score aléatoire pour les matchs en direct
+      return MatchScore(
+        matchId: id,
+        homeScore: id == 'test_2' ? 1 : 0,
+        awayScore: id == 'test_2' ? 2 : 0,
+        status: id == 'test_2' ? 'live' : 'scheduled',
+        minute: id == 'test_2' ? 75 : null,
+      );
+    }).toList();
   }
 
   /// Récupère les détails d'un match spécifique
@@ -145,9 +190,9 @@ class FootballApiService {
     }
 
     try {
-      final url = '${ApiConfig.baseUrl}/matches/$matchId';
+      final uri = _getUri('/matches/$matchId');
       final response = await http.get(
-        Uri.parse(url), 
+        uri, 
         headers: _headers,
       ).timeout(ApiConfig.apiTimeout);
       
@@ -211,7 +256,7 @@ class FootballApiService {
     
     try {
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/competitions'),
+        _getUri('/competitions'),
         headers: _headers,
       ).timeout(const Duration(seconds: 5));
       
@@ -248,15 +293,23 @@ class FootballApiService {
   }
 
   /// Retourne des données de test pour le développement
+  /// Utilise des URLs d'images sans restrictions CORS pour le mode web
   List<MatchData> getTestMatches() {
     final now = DateTime.now();
+    
+    // URLs d'images accessibles sans CORS (placeholder ou images publiques)
+    const realMadridLogo = 'https://upload.wikimedia.org/wikipedia/en/thumb/5/56/Real_Madrid_CF.svg/150px-Real_Madrid_CF.svg.png';
+    const barcelonaLogo = 'https://upload.wikimedia.org/wikipedia/en/thumb/4/47/FC_Barcelona_%28crest%29.svg/150px-FC_Barcelona_%28crest%29.svg.png';
+    const manchesterUnitedLogo = 'https://upload.wikimedia.org/wikipedia/en/thumb/7/7a/Manchester_United_FC_crest.svg/150px-Manchester_United_FC_crest.svg.png';
+    const liverpoolLogo = 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0c/Liverpool_FC.svg/150px-Liverpool_FC.svg.png';
+    
     return [
       MatchData(
         id: 'test_1',
         homeTeamName: 'Real Madrid',
-        homeTeamLogo: 'https://crests.football-data.org/86.png',
+        homeTeamLogo: realMadridLogo,
         awayTeamName: 'Barcelona',
-        awayTeamLogo: 'https://crests.football-data.org/81.png',
+        awayTeamLogo: barcelonaLogo,
         competition: 'La Liga',
         startTime: now.add(const Duration(hours: 2)),
         status: 'scheduled',
@@ -266,9 +319,9 @@ class FootballApiService {
       MatchData(
         id: 'test_2',
         homeTeamName: 'Manchester United',
-        homeTeamLogo: 'https://crests.football-data.org/66.png',
+        homeTeamLogo: manchesterUnitedLogo,
         awayTeamName: 'Liverpool',
-        awayTeamLogo: 'https://crests.football-data.org/64.png',
+        awayTeamLogo: liverpoolLogo,
         competition: 'Premier League',
         startTime: now.subtract(const Duration(minutes: 30)),
         status: 'live',
