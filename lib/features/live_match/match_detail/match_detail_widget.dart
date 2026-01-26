@@ -1,12 +1,10 @@
 import '/core/backend/backend.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
 import '/core/flutter_flow/flutter_flow_widgets.dart';
 import '/features/live_match/services/pronostic_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 
 import 'match_detail_model.dart';
 export 'match_detail_model.dart';
@@ -56,9 +54,9 @@ class _MatchDetailWidgetState extends State<MatchDetailWidget>
   @override
   Widget build(BuildContext context) {
     if (widget.matchId == null) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0A0A0A),
-        body: const Center(
+      return const Scaffold(
+        backgroundColor: Color(0xFF0A0A0A),
+        body: Center(
           child: Text(
             'Match ID manquant',
             style: TextStyle(color: Colors.white),
@@ -787,11 +785,11 @@ class _MatchDetailWidgetState extends State<MatchDetailWidget>
                 ),
               ),
               const SizedBox(height: 12),
-              _buildStatBar('${match.teamAName}', stats.teamAPercentage, stats.teamACount),
+              _buildStatBar(match.teamAName, stats.teamAPercentage, stats.teamACount),
               const SizedBox(height: 8),
               _buildStatBar('Match nul', stats.drawPercentage, stats.drawCount),
               const SizedBox(height: 8),
-              _buildStatBar('${match.teamBName}', stats.teamBPercentage, stats.teamBCount),
+              _buildStatBar(match.teamBName, stats.teamBPercentage, stats.teamBCount),
             ],
           ),
         );

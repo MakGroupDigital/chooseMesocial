@@ -1,7 +1,5 @@
 import '/core/backend/backend.dart';
 import '/core/auth/firebase_auth/auth_util.dart';
-import '/core/flutter_flow/flutter_flow_util.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 /// Service pour la gestion des pronostics utilisateurs

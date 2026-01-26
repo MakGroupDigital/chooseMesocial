@@ -1,9 +1,6 @@
 import '/core/backend/backend.dart';
-import '/core/auth/firebase_auth/auth_util.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
 import '/core/flutter_flow/flutter_flow_widgets.dart';
-import '/core/flutter_flow/form_field_controller.dart';
 import '/features/live_match/services/wallet_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -303,7 +300,7 @@ class _WithdrawalWidgetState extends State<WithdrawalWidget>
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: _model.selectedMethod,
+            initialValue: _model.selectedMethod,
             decoration: InputDecoration(
               filled: true,
               fillColor: const Color(0xFF2A2A2A),

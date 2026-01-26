@@ -503,7 +503,7 @@ class _ChoosestarterWidgetState extends State<ChoosestarterWidget>
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lock, color: Colors.white38, size: 16),
+            const Icon(Icons.lock, color: Colors.white38, size: 16),
             const SizedBox(width: 6),
             Text(
               'Paiement sécurisé via PayPal',

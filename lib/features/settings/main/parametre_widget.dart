@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '/core/auth/firebase_auth/auth_util.dart';
 import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
-import '/core/flutter_flow/flutter_flow_widgets.dart';
 import '/index.dart';
 import 'parametre_model.dart';
 export 'parametre_model.dart';
@@ -226,7 +225,7 @@ class _ParametreWidgetState extends State<ParametreWidget>
           Switch(
             value: value ?? false,
             onChanged: onChanged,
-            activeColor: _primaryGradient[1],
+            activeThumbColor: _primaryGradient[1],
             activeTrackColor: _primaryGradient[0].withOpacity(0.5),
             inactiveThumbColor: Colors.white38,
             inactiveTrackColor: Colors.white12,

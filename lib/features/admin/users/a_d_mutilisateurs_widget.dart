@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '/core/backend/backend.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
-import '/index.dart';
 import 'a_d_mutilisateurs_model.dart';
 export 'a_d_mutilisateurs_model.dart';
 

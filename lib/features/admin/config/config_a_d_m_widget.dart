@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
 import 'config_a_d_m_model.dart';
 export 'config_a_d_m_model.dart';
@@ -143,7 +142,7 @@ class _ConfigADMWidgetState extends State<ConfigADMWidget> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: const Color(0xFF19DB8A),
+            activeThumbColor: const Color(0xFF19DB8A),
           ),
         ],
       ),

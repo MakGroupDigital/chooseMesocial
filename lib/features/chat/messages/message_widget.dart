@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'message_model.dart';
@@ -231,10 +230,10 @@ class _MessageWidgetState extends State<MessageWidget> {
                       ),
                       padding: const EdgeInsets.all(2),
                       child: Container(
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0xFF0A0A0A),
-                          image: const DecorationImage(
+                          color: Color(0xFF0A0A0A),
+                          image: DecorationImage(
                             image: AssetImage('assets/images/Sans_titre-4.png'),
                             fit: BoxFit.cover,
                           ),

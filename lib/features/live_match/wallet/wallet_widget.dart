@@ -1,5 +1,4 @@
 import '/core/backend/backend.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
 import '/core/flutter_flow/flutter_flow_widgets.dart';
 import '/features/live_match/services/wallet_service.dart';
@@ -7,7 +6,6 @@ import '/features/live_match/wallet/withdrawal_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 
 import 'wallet_model.dart';
 export 'wallet_model.dart';
@@ -137,10 +135,10 @@ class _WalletWidgetState extends State<WalletWidget>
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           colors: [
-            const Color(0xFF208050),
-            const Color(0xFF19DB8A),
+            Color(0xFF208050),
+            Color(0xFF19DB8A),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

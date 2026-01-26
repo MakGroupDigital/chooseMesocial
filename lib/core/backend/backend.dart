@@ -26,7 +26,6 @@ import 'schema/moderation_record.dart';
 import 'schema/match_record.dart';
 import 'schema/pronostic_record.dart';
 import 'schema/wallet_record.dart';
-import 'schema/transaction_record.dart';
 import 'schema/withdrawal_record.dart';
 import 'dart:async';
 import 'package:infinite_scroll_pagination/infinite_scroll_pagination.dart';

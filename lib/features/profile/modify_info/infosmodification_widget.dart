@@ -1,4 +1,3 @@
-import '/app_state.dart';
 import '/core/auth/firebase_auth/auth_util.dart';
 import '/core/backend/backend.dart';
 import '/core/backend/firebase_storage/storage.dart';

@@ -249,7 +249,7 @@ class _NotificationWidgetState extends State<NotificationWidget>
           Switch(
             value: value ?? false,
             onChanged: onChanged,
-            activeColor: _primaryGradient[1],
+            activeThumbColor: _primaryGradient[1],
             activeTrackColor: _primaryGradient[0].withOpacity(0.5),
             inactiveThumbColor: Colors.white38,
             inactiveTrackColor: Colors.white12,

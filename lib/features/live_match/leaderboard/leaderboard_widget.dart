@@ -1,14 +1,11 @@
 import '/core/backend/backend.dart';
 import '/core/auth/firebase_auth/auth_util.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
-import '/core/flutter_flow/flutter_flow_widgets.dart';
 import '/features/live_match/services/leaderboard_service.dart';
 import '/features/live_match/services/pronostic_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 
 import 'leaderboard_model.dart';
 export 'leaderboard_model.dart';
@@ -281,7 +278,7 @@ class _LeaderboardWidgetState extends State<LeaderboardWidget>
                 final index = entry.key;
                 final leaderboardEntry = entry.value;
                 return _buildLeaderboardItem(leaderboardEntry, index == leaderboard.length - 1);
-              }).toList(),
+              }),
             ],
           ),
         );
@@ -314,9 +311,9 @@ class _LeaderboardWidgetState extends State<LeaderboardWidget>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
-        border: isLast ? null : Border(
+        border: isLast ? null : const Border(
           bottom: BorderSide(
-            color: const Color(0xFF2A2A2A),
+            color: Color(0xFF2A2A2A),
             width: 1,
           ),
         ),
@@ -510,10 +507,10 @@ class _LeaderboardWidgetState extends State<LeaderboardWidget>
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           colors: [
-            const Color(0xFF208050),
-            const Color(0xFF19DB8A),
+            Color(0xFF208050),
+            Color(0xFF19DB8A),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

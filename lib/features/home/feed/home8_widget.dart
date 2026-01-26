@@ -1,7 +1,5 @@
-import '/app_state.dart';
 import '/core/auth/firebase_auth/auth_util.dart';
 import '/core/backend/backend.dart';
-import '/core/flutter_flow/flutter_flow_icon_button.dart';
 import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_toggle_icon.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
@@ -214,7 +212,7 @@ class _Home8WidgetState extends State<Home8Widget> with TickerProviderStateMixin
         else
           Container(
             color: const Color(0xFF0A0A0A),
-            child: Center(
+            child: const Center(
               child: Icon(Icons.videocam_off, color: Colors.white38, size: 60),
             ),
           ),

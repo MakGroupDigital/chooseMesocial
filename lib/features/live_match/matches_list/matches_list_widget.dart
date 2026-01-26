@@ -94,7 +94,7 @@ class _MatchesListWidgetState extends State<MatchesListWidget>
                 borderRadius: 12,
                 buttonSize: 44,
                 fillColor: Colors.white.withOpacity(0.1),
-                icon: Icon(
+                icon: const Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 24,
@@ -223,9 +223,9 @@ class _MatchesListWidgetState extends State<MatchesListWidget>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            const Icon(
               Icons.cloud_off_rounded,
-              color: const Color(0xFFFFA502),
+              color: Color(0xFFFFA502),
               size: 16,
             ),
             const SizedBox(width: 8),
@@ -689,7 +689,7 @@ class _MatchesListWidgetState extends State<MatchesListWidget>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
+                const Icon(
                   Icons.sports_esports_rounded,
                   color: Colors.white,
                   size: 20,

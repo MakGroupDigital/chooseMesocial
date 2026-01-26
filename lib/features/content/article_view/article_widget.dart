@@ -1,4 +1,3 @@
-import '/app_state.dart';
 import '/core/backend/backend.dart';
 import '/core/flutter_flow/flutter_flow_icon_button.dart';
 import '/core/flutter_flow/flutter_flow_theme.dart';

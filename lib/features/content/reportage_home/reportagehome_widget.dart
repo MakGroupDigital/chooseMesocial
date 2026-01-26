@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
-import '/index.dart';
 import 'reportagehome_model.dart';
 export 'reportagehome_model.dart';
 
@@ -111,9 +109,9 @@ class _ReportagehomeWidgetState extends State<ReportagehomeWidget> {
           // Thumbnail
           Container(
             height: 180,
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-              image: const DecorationImage(
+            decoration: const BoxDecoration(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              image: DecorationImage(
                 image: AssetImage('assets/images/Sans_titre-4.png'),
                 fit: BoxFit.cover,
               ),

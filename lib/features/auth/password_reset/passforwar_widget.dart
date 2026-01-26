@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '/core/auth/firebase_auth/auth_util.dart';
-import '/core/flutter_flow/flutter_flow_theme.dart';
 import '/core/flutter_flow/flutter_flow_util.dart';
 import '/core/flutter_flow/flutter_flow_widgets.dart';
 import '/index.dart';
@@ -230,9 +229,9 @@ class _PassforwarWidgetState extends State<PassforwarWidget> {
                         ),
                         child: Column(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.check_circle,
-                              color: const Color(0xFF19DB8A),
+                              color: Color(0xFF19DB8A),
                               size: 48,
                             ),
                             const SizedBox(height: 16),

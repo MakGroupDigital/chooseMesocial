@@ -1,4 +1,3 @@
-import '/app_state.dart';
 import '/core/auth/firebase_auth/auth_util.dart';
 import '/core/backend/backend.dart';
 import '/core/flutter_flow/flutter_flow_choice_chips.dart';
@@ -10,7 +9,6 @@ import '/core/flutter_flow/flutter_flow_widgets.dart';
 import '/core/flutter_flow/form_field_controller.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
