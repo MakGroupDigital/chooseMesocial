@@ -3,26 +3,15 @@ import { getAuth, type Auth, onAuthStateChanged, type User } from 'firebase/auth
 import { getFirestore, type Firestore, enableIndexedDbPersistence, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
 
-// Utiliser les variables d'environnement de Firebase App Hosting si disponibles
-// Sinon utiliser la config en dur pour le développement local
-const getFirebaseConfig = () => {
-  // Firebase App Hosting injecte automatiquement FIREBASE_WEBAPP_CONFIG
-  if (typeof window !== 'undefined' && (window as any).FIREBASE_WEBAPP_CONFIG) {
-    return (window as any).FIREBASE_WEBAPP_CONFIG;
-  }
-  
-  // Config par défaut pour développement local
-  return {
-    apiKey: 'AIzaSyCtL0WmFOvrcG0V_0ZSwq4TCnOHRVfGnJM',
-    authDomain: 'choose-me-l1izsi.firebaseapp.com',
-    projectId: 'choose-me-l1izsi',
-    storageBucket: 'choose-me-l1izsi.firebasestorage.app',
-    messagingSenderId: '5765431920',
-    appId: '1:5765431920:web:7e8f5ae884de10f7ef2ab5'
-  };
+// Configuration Firebase depuis les variables d'environnement Vite
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCtL0WmFOvrcG0V_0ZSwq4TCnOHRVfGnJM',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'choose-me-l1izsi.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'choose-me-l1izsi',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'choose-me-l1izsi.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '5765431920',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:5765431920:web:7e8f5ae884de10f7ef2ab5'
 };
-
-const firebaseConfig = getFirebaseConfig();
 
 let app: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
