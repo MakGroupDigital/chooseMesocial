@@ -221,7 +221,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
         // Décrémenter le compteur
         setFollowerCounts(prev => {
           const newMap = new Map(prev);
-          const currentCount = newMap.get(post.userId) || 0;
+          const currentCount = (newMap.get(post.userId) || 0) as number;
           newMap.set(post.userId, Math.max(0, currentCount - 1));
           return newMap;
         });
@@ -233,7 +233,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
         // Incrémenter le compteur
         setFollowerCounts(prev => {
           const newMap = new Map(prev);
-          const currentCount = newMap.get(post.userId) || 0;
+          const currentCount = (newMap.get(post.userId) || 0) as number;
           newMap.set(post.userId, currentCount + 1);
           return newMap;
         });
@@ -391,13 +391,13 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#050505]">
+    <div className="w-full h-screen flex flex-col bg-[#050505] overflow-hidden">
       {/* Dynamic Header */}
-      <header className="fixed top-12 left-0 right-0 z-50 px-6 flex justify-between items-center pointer-events-none">
-        <div className="flex gap-3 pointer-events-auto bg-black/40 rounded-full px-1 py-1 border border-white/10 backdrop-blur-md">
+      <header className="fixed top-0 left-0 right-0 z-50 px-4 py-3 flex justify-between items-center pointer-events-none bg-black/40 backdrop-blur-md border-b border-white/5">
+        <div className="flex gap-2 pointer-events-auto bg-black/40 rounded-full px-1 py-1 border border-white/10 backdrop-blur-md">
           <button 
             onClick={() => setActiveTab('all')}
-            className={`text-sm font-readex font-semibold tracking-tight px-3 py-1 rounded-full transition-all ${
+            className={`text-xs md:text-sm font-readex font-semibold tracking-tight px-2 md:px-3 py-1 rounded-full transition-all ${
               activeTab === 'all' 
                 ? 'text-white bg-[#208050]' 
                 : 'text-white/40'
@@ -407,7 +407,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
           </button>
           <button 
             onClick={() => setActiveTab('following')}
-            className={`text-sm font-readex font-semibold tracking-tight px-3 py-1 rounded-full transition-all ${
+            className={`text-xs md:text-sm font-readex font-semibold tracking-tight px-2 md:px-3 py-1 rounded-full transition-all ${
               activeTab === 'following' 
                 ? 'text-white bg-[#208050]' 
                 : 'text-white/40'
@@ -416,11 +416,11 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
             Abonnements
           </button>
         </div>
-        <div className="flex gap-3 pointer-events-auto">
+        <div className="flex gap-2 pointer-events-auto">
           <button className="p-2 bg-black/20 backdrop-blur-md rounded-full border border-white/10 text-white">
-            <Bell size={20} />
+            <Bell size={18} />
           </button>
-          <div className="w-10 h-10 rounded-full border-2 border-[#19DB8A] overflow-hidden bg-white/10">
+          <div className="w-9 h-9 rounded-full border-2 border-[#19DB8A] overflow-hidden bg-white/10">
             <img 
               src={currentUserData?.avatarUrl || currentUser?.photoURL || '/assets/images/app_launcher_icon.png'} 
               alt="Me" 
@@ -432,7 +432,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
 
       {/* Vertical Performance Feed */}
       <div 
-        className="flex-1 overflow-y-scroll snap-y snap-mandatory custom-scrollbar"
+        className="flex-1 w-full overflow-y-scroll snap-y snap-mandatory custom-scrollbar pt-16 pb-20"
         onScroll={(e) => {
           const container = e.currentTarget;
           const scrollTop = container.scrollTop;
@@ -459,7 +459,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
         }}
       >
         {loading && (
-          <div className="h-full flex flex-col items-center justify-center bg-[#050505]">
+          <div className="w-full h-screen flex flex-col items-center justify-center bg-[#050505]">
             {/* Logo Choose Me animé en chargement - rogné en cercle */}
             <div className="relative w-32 h-32 mb-6 rounded-full overflow-hidden bg-white/5 border-4 border-[#19DB8A]/30 shadow-2xl">
               <img 
@@ -472,7 +472,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
           </div>
         )}
         {!loading && error && (
-          <div className="h-full flex flex-col items-center justify-center p-6">
+          <div className="w-full h-screen flex flex-col items-center justify-center p-6">
             <div className="text-center">
               <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">📹</span>
@@ -485,7 +485,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
           </div>
         )}
         {!loading && !error && feed.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center p-6">
+          <div className="w-full h-screen flex flex-col items-center justify-center p-6">
             <div className="text-center">
               <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">🎬</span>
@@ -504,7 +504,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
           </div>
         )}
         {!loading && !error && feed.map((post, index) => (
-          <div key={post.id} className="relative h-full w-full snap-start overflow-hidden">
+          <div key={`${post.id}-${post.docPath}-${index}`} className="relative w-full h-screen snap-start overflow-hidden flex-shrink-0">
             {/* Vidéo HTML5 en plein écran - lecture automatique sans poster */}
             <video
               id={`video-${index}`}
@@ -529,15 +529,18 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
               }}
             />
 
+            {/* Gradient overlay pour meilleure lisibilité */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40 pointer-events-none" />
+
             {/* Interactions Bar */}
-            <div className="absolute right-4 bottom-28 flex flex-col gap-5 items-center">
+            <div className="absolute right-4 bottom-32 flex flex-col gap-4 items-center z-20">
               {/* Mute / Unmute audio */}
               <button
                 onClick={toggleMute}
                 className="flex flex-col items-center"
               >
-                <div className="p-3 rounded-full bg-black/20 backdrop-blur-md text-white">
-                  {isMuted ? <IconVolumeMuted size={20} /> : <IconVolume size={20} />}
+                <div className="p-3.5 rounded-full bg-black/30 backdrop-blur-md text-white hover:text-[#19DB8A] transition-all">
+                  {isMuted ? <IconVolumeMuted size={36} /> : <IconVolume size={36} />}
                 </div>
               </button>
 
@@ -547,35 +550,34 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
                 disabled={followingLoading.has(post.userId)}
                 className="flex flex-col items-center group"
               >
-                <div className={`p-3 rounded-full backdrop-blur-md transition-all ${
+                <div className={`p-3.5 rounded-full backdrop-blur-md transition-all ${
                   followingUsers.has(post.userId)
                     ? 'bg-[#19DB8A]/20 text-[#19DB8A]'
-                    : 'bg-black/20 text-white'
+                    : 'bg-black/30 text-white hover:bg-[#19DB8A]/20 hover:text-[#19DB8A]'
                 } ${followingLoading.has(post.userId) ? 'opacity-50' : ''}`}>
                   {followingUsers.has(post.userId) ? (
-                    <UserCheck size={20} />
+                    <UserCheck size={36} />
                   ) : (
-                    <UserPlus size={20} />
+                    <UserPlus size={36} />
                   )}
                 </div>
-                {/* Afficher le compteur de followers */}
                 {followerCounts.has(post.userId) && (
-                  <span className="text-white text-xs font-bold mt-1">
+                  <span className="text-white text-xs font-bold mt-1.5">
                     {followerCounts.get(post.userId)}
                   </span>
                 )}
               </button>
 
               <div className="flex flex-col items-center">
-                <div className="w-12 h-12 rounded-full border-2 border-white overflow-hidden shadow-xl mb-1">
+                <div className="w-14 h-14 rounded-full border-2 border-white overflow-hidden shadow-lg">
                   <img 
                     src={post.userAvatar || '/assets/images/app_launcher_icon.png'} 
                     alt={post.userName}
                     className="w-full h-full object-cover" 
                   />
                 </div>
-                <div className="bg-[#19DB8A] rounded-full p-1 -mt-3 relative z-10 border-2 border-black">
-                  <PlusCircle size={10} className="text-white" />
+                <div className="bg-[#19DB8A] rounded-full p-0.5 -mt-2.5 relative z-10 border-2 border-black">
+                  <PlusCircle size={12} className="text-white" />
                 </div>
               </div>
 
@@ -583,62 +585,60 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
                 onClick={() => toggleLike(post)}
                 className="flex flex-col items-center group"
               >
-                <div className={`p-3 rounded-full bg-black/20 backdrop-blur-md transition-all ${
+                <div className={`p-3.5 rounded-full bg-black/30 backdrop-blur-md transition-all ${
                   post.docPath && likedPosts.has(post.docPath) 
                     ? 'text-[#FF4B5C] scale-110' 
-                    : 'text-white'
+                    : 'text-white hover:text-[#FF4B5C]'
                 }`}>
-                  <IconLike size={24} />
+                  <IconLike size={36} />
                 </div>
-                <span className="text-white text-xs font-bold mt-1">
-                  {post.likes}
+                <span className="text-white text-xs font-bold mt-1.5 h-5">
+                  {typeof post.likes === 'number' ? post.likes : 0}
                 </span>
               </button>
 
               <button
-                className="flex flex-col items-center"
+                className="flex flex-col items-center group"
                 onClick={() => openComments(post)}
               >
-                <div className="p-3 rounded-full bg-black/20 backdrop-blur-md text-white">
-                  <IconComment size={24} />
+                <div className="p-3.5 rounded-full bg-black/30 backdrop-blur-md text-white hover:text-[#19DB8A] transition-all">
+                  <IconComment size={36} />
                 </div>
-                <span className="text-white text-xs font-bold mt-1">{post.comments}</span>
+                <span className="text-white text-xs font-bold mt-1.5">{post.comments || 0}</span>
               </button>
 
               <button 
                 onClick={() => handleShare(post)}
-                className="flex flex-col items-center"
+                className="flex flex-col items-center group"
               >
-                <div className="p-3 rounded-full bg-black/20 backdrop-blur-md text-white">
-                  <IconShare size={24} />
+                <div className="p-3.5 rounded-full bg-black/30 backdrop-blur-md text-white hover:text-[#19DB8A] transition-all">
+                  <IconShare size={36} />
                 </div>
-                <span className="text-white text-xs font-bold mt-1">{post.shares}</span>
+                <span className="text-white text-xs font-bold mt-1.5">{post.shares || 0}</span>
               </button>
             </div>
 
             {/* Post Info */}
-            <div className="absolute left-6 right-24 bottom-24">
-              <h3 className="text-white font-bold text-[15px] mb-1 flex items-center gap-2">
+            <div className="absolute left-4 right-20 bottom-32 z-20">
+              <h3 className="text-white font-bold text-sm mb-1 flex items-center gap-2 line-clamp-1">
                 @{post.userName}
-                <span className="bg-[#208050] text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest">
+                <span className="bg-[#208050] text-[8px] px-1.5 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0">
                   {getSportFromPost(post)}
                 </span>
               </h3>
-              <p className="text-white/85 text-[13px] leading-snug line-clamp-3">
+              <p className="text-white/90 text-xs leading-tight line-clamp-2 mb-2">
                 {post.caption}
               </p>
               {post.hashtags && post.hashtags.length > 0 && (
-                <div className="mt-4 flex items-center gap-2">
-                  <div className="flex gap-1 flex-wrap">
-                    {post.hashtags.slice(0, 4).map((tag) => (
-                      <span
-                        key={tag}
-                        className="text-[#19DB8A] text-xs font-medium"
-                      >
-                        #{tag.replace(/^#/, '')}
-                      </span>
-                    ))}
-                  </div>
+                <div className="flex gap-1 flex-wrap">
+                  {post.hashtags.slice(0, 3).map((tag) => (
+                    <span
+                      key={tag}
+                      className="text-[#19DB8A] text-[10px] font-medium"
+                    >
+                      #{tag.replace(/^#/, '')}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>

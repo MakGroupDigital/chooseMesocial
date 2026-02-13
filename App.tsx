@@ -30,38 +30,11 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const DeviceMockup: React.FC<{ children: React.ReactNode, showNav: boolean, userType?: UserType }> = ({ children, showNav, userType }) => {
   return (
-    <div className="min-h-screen bg-[#020202] flex items-center justify-center p-0 md:p-12 font-sans overflow-hidden">
-      <div className="hidden md:block absolute top-[-20%] left-[-10%] w-[70%] h-[70%] bg-[#208050] opacity-[0.08] blur-[200px] pointer-events-none animate-pulse" />
-      <div className="hidden md:block absolute bottom-[-20%] right-[-10%] w-[70%] h-[70%] bg-[#FF8A3C] opacity-[0.05] blur-[200px] pointer-events-none" />
-
-      <div className="relative w-full h-screen md:w-[430px] md:h-[932px] md:max-h-[95vh] bg-black md:rounded-[60px] md:border-[10px] md:border-[#1c1c1e] md:shadow-[0_40px_100px_-20px_rgba(0,0,0,1)] flex flex-col transition-all duration-700 select-none overflow-hidden border-zinc-800">
-        
-        <div className="hidden md:flex absolute top-4 left-0 right-0 h-10 items-center justify-center z-[100] pointer-events-none">
-          <div className="w-[125px] h-8 bg-black rounded-[24px] flex items-center justify-end pr-5 shadow-[0_4px_12px_rgba(0,0,0,0.5)] border border-white/5">
-             <div className="w-2 h-2 bg-[#0a0a0c] rounded-full mr-1 ring-1 ring-white/10 opacity-60 shadow-inner" />
-          </div>
-        </div>
-
-        <div className="hidden md:flex absolute top-6 left-12 right-12 justify-between items-center text-[12px] font-bold text-white z-[90] pointer-events-none tracking-tight">
-          <span>9:41</span>
-          <div className="flex gap-1.5 items-center">
-            <svg width="18" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 20a1 1 0 0 1-1-1v-4a1 1 0 0 1 2 0v4a1 1 0 0 1-1 1zm5 0a1 1 0 0 1-1-1v-8a1 1 0 0 1 2 0v8a1 1 0 0 1-1 1zm5 0a1 1 0 0 1-1-1V3a1 1 0 0 1 2 0v16a1 1 0 0 1-1 1zM7 20a1 1 0 0 1-1-1v-1a1 1 0 0 1 2 0v1a1 1 0 0 1-1 1z"/></svg>
-            <div className="w-6 h-3 border border-white/30 rounded-sm relative flex items-center px-0.5">
-              <div className="bg-white h-1.5 w-[80%] rounded-[1px]" />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-[#050505] md:pt-12">
-          {children}
-        </div>
-
-        {showNav && <BottomNav userType={userType || UserType.ATHLETE} />}
-
-        <div className="absolute bottom-2 left-0 right-0 flex justify-center pointer-events-none z-[110]">
-          <div className="w-32 h-1 bg-white/20 rounded-full" />
-        </div>
+    <div className="min-h-screen bg-[#050505] flex flex-col font-sans overflow-hidden">
+      <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-[#050505]">
+        {children}
       </div>
+      {showNav && <BottomNav userType={userType || UserType.ATHLETE} />}
     </div>
   );
 };

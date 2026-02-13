@@ -182,14 +182,16 @@ const MatchDetailPage: React.FC = () => {
           <div className="flex items-center justify-between mb-6">
             {/* Team A */}
             <div className="flex flex-col items-center flex-1">
-              <img 
-                src={match.teamALogo} 
-                alt={match.teamAName}
-                className="w-20 h-20 object-contain mb-3"
-                onError={(e) => {
-                  e.currentTarget.src = 'https://via.placeholder.com/80?text=Team';
-                }}
-              />
+              <div className="w-20 h-20 mb-3 flex items-center justify-center bg-white/5 rounded-full">
+                <img 
+                  src={match.teamALogo || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.teamAName)}&background=19DB8A&color=000&size=80`} 
+                  alt={match.teamAName}
+                  className="w-16 h-16 object-contain"
+                  onError={(e) => {
+                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(match.teamAName)}&background=19DB8A&color=000&size=80`;
+                  }}
+                />
+              </div>
               <p className="font-bold text-center">{match.teamAName}</p>
             </div>
 
@@ -224,14 +226,16 @@ const MatchDetailPage: React.FC = () => {
 
             {/* Team B */}
             <div className="flex flex-col items-center flex-1">
-              <img 
-                src={match.teamBLogo} 
-                alt={match.teamBName}
-                className="w-20 h-20 object-contain mb-3"
-                onError={(e) => {
-                  e.currentTarget.src = 'https://via.placeholder.com/80?text=Team';
-                }}
-              />
+              <div className="w-20 h-20 mb-3 flex items-center justify-center bg-white/5 rounded-full">
+                <img 
+                  src={match.teamBLogo || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.teamBName)}&background=FF8A3C&color=fff&size=80`} 
+                  alt={match.teamBName}
+                  className="w-16 h-16 object-contain"
+                  onError={(e) => {
+                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(match.teamBName)}&background=FF8A3C&color=fff&size=80`;
+                  }}
+                />
+              </div>
               <p className="font-bold text-center">{match.teamBName}</p>
             </div>
           </div>

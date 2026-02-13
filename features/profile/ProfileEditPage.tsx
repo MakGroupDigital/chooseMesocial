@@ -442,7 +442,7 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
       </div>
 
       {/* Save Buttons */}
-      <div className="flex gap-3 fixed bottom-6 left-6 right-6">
+      <div className="flex gap-3 pb-6">
         <button 
           onClick={() => navigate(-1)}
           className="flex-1 py-4 bg-[#0A0A0A] border border-white/5 rounded-2xl text-white font-bold hover:bg-[#0A0A0A]/80 transition-colors"
@@ -467,9 +467,6 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
           )}
         </button>
       </div>
-
-      {/* Spacer for fixed buttons */}
-      <div className="h-20" />
     </div>
   );
 };

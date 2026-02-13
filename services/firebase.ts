@@ -1,6 +1,6 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth, onAuthStateChanged, type User } from 'firebase/auth';
-import { getFirestore, type Firestore, enableIndexedDbPersistence, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+import { getFirestore, type Firestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
 
 // Configuration Firebase depuis les variables d'environnement Vite
@@ -34,15 +34,8 @@ export function getFirebaseAuth(): Auth {
 export function getFirestoreDb(): Firestore {
   if (!dbInstance) {
     dbInstance = getFirestore(getFirebaseApp());
-    
-    // Activer la persistance offline pour un meilleur support hors ligne
-    enableMultiTabIndexedDbPersistence(dbInstance).catch((err) => {
-      if (err.code === 'failed-precondition') {
-        console.warn('⚠️ Persistance: Plusieurs onglets ouverts');
-      } else if (err.code === 'unimplemented') {
-        console.warn('⚠️ Persistance non supportée par ce navigateur');
-      }
-    });
+    // La persistance est activée par défaut dans Firestore v9+
+    // Pas besoin d'appeler enableMultiTabIndexedDbPersistence()
   }
   return dbInstance;
 }
