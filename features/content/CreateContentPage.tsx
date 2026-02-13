@@ -15,6 +15,7 @@ import { UserType } from '../../types';
 import { uploadPerformanceVideo } from '../../services/performanceService';
 import { getFirebaseAuth, getFirestoreDb } from '../../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { permissionService } from '../../services/permissionService';
 
 const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
   const navigate = useNavigate();
@@ -75,6 +76,15 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
         stream.getTracks().forEach((t) => t.stop());
       }
       
+      // Demander les permissions avant d'accéder à la caméra
+      const cameraGranted = await permissionService.requestCamera();
+      if (!cameraGranted) {
+        alert('Permission caméra refusée. Impossible de filmer.');
+        return;
+      }
+
+      const micGranted = await permissionService.requestMicrophone();
+      
       // Demander 4K (3840x2160) ou la meilleure résolution disponible
       const newStream = await navigator.mediaDevices.getUserMedia({
         video: { 
@@ -83,7 +93,7 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
           height: { ideal: 2160, min: 1920 },
           aspectRatio: { ideal: 9/16 }
         },
-        audio: audioEnabled
+        audio: micGranted
       });
       
       setStream(newStream);

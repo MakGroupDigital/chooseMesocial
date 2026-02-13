@@ -22,11 +22,13 @@ import ReportageDetailPage from './features/explorer/ReportageDetailPage';
 import CreateContentPage from './features/content/CreateContentPage';
 import SharedVideoPage from './features/content/SharedVideoPage';
 import BottomNav from './components/BottomNav';
+import PermissionModal from './components/PermissionModal';
 import { UserType, UserProfile } from './types';
 import { MOCK_USER } from './constants';
 import { getFirebaseAuth, getFirestoreDb } from './services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { usePermissions } from './hooks/usePermissions';
 
 const DeviceMockup: React.FC<{ children: React.ReactNode, showNav: boolean, userType?: UserType }> = ({ children, showNav, userType }) => {
   return (
@@ -43,6 +45,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
+  const { isModalOpen, currentPermission, handleAllow, handleDeny } = usePermissions();
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -117,6 +120,16 @@ const App: React.FC = () => {
 
   return (
     <DeviceMockup showNav={showNav} userType={user?.type}>
+      {currentPermission && (
+        <PermissionModal
+          isOpen={isModalOpen}
+          title={currentPermission.title}
+          description={currentPermission.description}
+          icon={currentPermission.icon}
+          onAllow={handleAllow}
+          onDeny={handleDeny}
+        />
+      )}
       <Routes>
         <Route path="/" element={user ? <Navigate to="/home" replace /> : <Navigate to="/onboarding" replace />} />
         <Route path="/onboarding" element={user ? <Navigate to="/home" replace /> : <ModernOnboardingPage />} />
