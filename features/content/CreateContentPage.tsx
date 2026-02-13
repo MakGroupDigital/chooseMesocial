@@ -20,10 +20,13 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
+  
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
@@ -60,6 +63,9 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
       if (recordedUrl) {
         URL.revokeObjectURL(recordedUrl);
       }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
   }, []);
 
@@ -68,14 +74,18 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
       }
+      
+      // Demander 4K (3840x2160) ou la meilleure résolution disponible
       const newStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: cameraFacing,
-          width: { ideal: 1080 },
-          height: { ideal: 1920 }
+          width: { ideal: 3840, min: 1080 },
+          height: { ideal: 2160, min: 1920 },
+          aspectRatio: { ideal: 9/16 }
         },
-        audio: true
+        audio: audioEnabled
       });
+      
       setStream(newStream);
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
@@ -87,65 +97,128 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
     }
   };
 
-  const toggleRecording = () => {
-    if (!stream) return;
-    
-    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-      // Démarrer l'enregistrement
-      const chunks: BlobPart[] = [];
-      
-      // Créer un canvas pour appliquer les filtres
-      const canvas = canvasRef.current;
-      if (canvas && videoRef.current) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          canvas.width = videoRef.current.videoWidth || 1080;
-          canvas.height = videoRef.current.videoHeight || 1920;
-        }
-      }
-      
-      const recorder = new MediaRecorder(stream, { 
-        mimeType: 'video/webm;codecs=vp9',
-        videoBitsPerSecond: 2500000
-      });
-      
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-      
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        setRecordedBlob(blob);
-        setRecordedUrl(url);
-        setShowCaptionInput(true);
-        
-        // Arrêter la caméra
-        if (stream) {
-          stream.getTracks().forEach((t) => t.stop());
-          setStream(null);
-        }
-      };
-      
-      recorder.start();
-      setMediaRecorder(recorder);
-      setRecording(true);
-    } else if (mediaRecorder.state === 'recording') {
-      // Arrêter l'enregistrement
-      mediaRecorder.stop();
-      setRecording(false);
-      setMediaRecorder(null);
-    }
-  };
-
   const toggleAudio = () => {
     if (stream) {
       stream.getAudioTracks().forEach((track) => {
         track.enabled = !audioEnabled;
       });
       setAudioEnabled(!audioEnabled);
+    }
+  };
+
+  const startRecording = async () => {
+    if (!stream || !videoRef.current) return;
+
+    chunksRef.current = [];
+    
+    // Créer un canvas pour capturer en format portrait 9:16 en 4K
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Résolution 4K en portrait (2160x3840)
+    canvas.width = 2160;
+    canvas.height = 3840;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Créer un stream depuis le canvas
+    const canvasStream = canvas.captureStream(30);
+
+    // Ajouter l'audio du stream original
+    stream.getAudioTracks().forEach(track => {
+      canvasStream.addTrack(track);
+    });
+
+    const recorder = new MediaRecorder(canvasStream, {
+      mimeType: 'video/webm;codecs=vp9',
+      videoBitsPerSecond: 8000000 // 8 Mbps pour 4K
+    });
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        chunksRef.current.push(e.data);
+      }
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      setRecordedBlob(blob);
+      setRecordedUrl(url);
+      setShowCaptionInput(true);
+
+      // Arrêter la caméra
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        setStream(null);
+      }
+    };
+
+    recorder.start();
+    mediaRecorderRef.current = recorder;
+    setRecording(true);
+
+    // Fonction pour dessiner les frames
+    const drawFrame = () => {
+      if (!videoRef.current || !ctx || !mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+        return;
+      }
+
+      ctx.save();
+
+      // Calculer les dimensions pour remplir le canvas en portrait
+      const video = videoRef.current;
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+
+      // Calculer le ratio pour remplir le canvas
+      const videoRatio = videoWidth / videoHeight;
+      const canvasRatio = canvasWidth / canvasHeight;
+
+      let drawWidth, drawHeight, offsetX, offsetY;
+
+      if (videoRatio > canvasRatio) {
+        // Vidéo plus large
+        drawHeight = canvasHeight;
+        drawWidth = canvasHeight * videoRatio;
+        offsetX = (canvasWidth - drawWidth) / 2;
+        offsetY = 0;
+      } else {
+        // Vidéo plus haute
+        drawWidth = canvasWidth;
+        drawHeight = canvasWidth / videoRatio;
+        offsetX = 0;
+        offsetY = (canvasHeight - drawHeight) / 2;
+      }
+
+      // Appliquer le mirroring pour la caméra selfie
+      if (cameraFacing === 'user') {
+        ctx.translate(canvasWidth, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, canvasWidth - offsetX - drawWidth, offsetY, drawWidth, drawHeight);
+      } else {
+        ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
+      }
+
+      ctx.restore();
+
+      animationFrameRef.current = requestAnimationFrame(drawFrame);
+    };
+
+    drawFrame();
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setRecording(false);
+      mediaRecorderRef.current = null;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     }
   };
 
@@ -168,7 +241,7 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     if (!file.type.startsWith('video/')) {
       alert('Veuillez sélectionner un fichier vidéo');
       return;
@@ -209,7 +282,7 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
       const userData = userSnap.data() as any;
 
       console.log('📤 Publication de la vidéo...');
-      
+
       await uploadPerformanceVideo(
         currentUser.uid,
         userData?.displayName || currentUser.email || 'Utilisateur',
@@ -220,15 +293,14 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
       );
 
       console.log('✅ Vidéo publiée avec succès');
-      
+
       // Rediriger vers le profil immédiatement
       navigate('/profile');
-      
+
       // Afficher un message de succès
       setTimeout(() => {
         alert('Vidéo publiée ! Le transcodage en MP4 prendra ~60 secondes.');
       }, 500);
-      
     } catch (e) {
       console.error('❌ Erreur publication:', e);
       alert('Erreur lors de la publication. Veuillez réessayer.');
@@ -244,12 +316,12 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
-      {/* Vidéo Stream - Optimisé pour mobile */}
-      <div className="flex-1 relative overflow-hidden bg-black">
+      {/* Vidéo Stream - Format portrait mobile */}
+      <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center">
         {recordedUrl ? (
           <video
             src={recordedUrl}
-            className="w-full h-full object-contain"
+            className="h-full w-auto max-w-full"
             autoPlay
             loop
             muted
@@ -258,17 +330,18 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
         ) : (
           <video
             ref={videoRef}
-            className="w-full h-full object-cover"
+            className="h-full w-auto max-w-full"
             autoPlay
             muted
             playsInline
             style={{
+              transform: cameraFacing === 'user' ? 'scaleX(-1)' : 'none',
               filter: `brightness(${brightness}%)`
             }}
           />
         )}
         
-        {/* Canvas caché pour les filtres */}
+        {/* Canvas caché pour l'enregistrement */}
         <canvas ref={canvasRef} className="hidden" />
 
         {/* Gradient overlay */}
@@ -389,7 +462,7 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
 
             {/* Bouton Enregistrer */}
             <button
-              onClick={toggleRecording}
+              onClick={recording ? stopRecording : startRecording}
               className="relative group"
               disabled={!stream}
             >
