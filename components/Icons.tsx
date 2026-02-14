@@ -194,3 +194,22 @@ export const IconVolumeMuted: React.FC<IconProps> = ({ size = 22, className }) =
   </svg>
 );
 
+export const IconWallet: React.FC<IconProps> = ({ size = 22, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    className={className}
+    fill="none"
+    stroke={stroke}
+    strokeWidth="1.7"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="6" width="18" height="13" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M7 6V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v2" />
+    <circle cx="16" cy="14" r="1.5" fill={primary} stroke="none" />
+  </svg>
+);
+

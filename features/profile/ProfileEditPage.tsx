@@ -5,7 +5,7 @@ import { ChevronLeft, Camera, Check, Loader, X } from 'lucide-react';
 import { UserProfile, UserType } from '../../types';
 import Button from '../../components/Button';
 import { getFirebaseAuth, getFirestoreDb } from '../../services/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { uploadProfileImage } from '../../services/imageUploadService';
 import { SPORTS_POSITIONS, MAJOR_CITIES } from '../../utils/sportsData';
 import { getPhoneCountries } from '../../utils/phoneCountries';
@@ -148,7 +148,16 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
       await updateDoc(userRef, updateData);
       
       setSuccess(true);
-      setTimeout(() => {
+      
+      // Force refresh des données utilisateur en relisant depuis Firestore
+      setTimeout(async () => {
+        try {
+          const updatedSnap = await getDoc(userRef);
+          const updatedData = updatedSnap.data() as any;
+          console.log('Données mises à jour:', updatedData);
+        } catch (e) {
+          console.error('Erreur lors du refresh:', e);
+        }
         navigate('/profile');
       }, 1500);
     } catch (e) {
@@ -433,7 +442,7 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
       </div>
 
       {/* Save Buttons */}
-      <div className="flex gap-3 fixed bottom-6 left-6 right-6">
+      <div className="flex gap-3 pb-6">
         <button 
           onClick={() => navigate(-1)}
           className="flex-1 py-4 bg-[#0A0A0A] border border-white/5 rounded-2xl text-white font-bold hover:bg-[#0A0A0A]/80 transition-colors"
@@ -458,9 +467,6 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
           )}
         </button>
       </div>
-
-      {/* Spacer for fixed buttons */}
-      <div className="h-20" />
     </div>
   );
 };

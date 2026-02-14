@@ -1,77 +1,204 @@
-import { collectionGroup, getDocs, orderBy, query } from 'firebase/firestore';
+import { collectionGroup, getDocs, orderBy, query, collection, getDoc, doc } from 'firebase/firestore';
 import { getFirestoreDb } from './firebase';
 import type { FeedPost } from '../types';
+import { sortVideosByAlgorithm } from './feedAlgorithm';
 
-// Récupère les vidéos depuis Firestore en utilisant la même structure que Flutter :
-// sous-collection "publication" (PublicationRecord) avec le champ "postVido".
-export async function fetchVideoFeed(): Promise<FeedPost[]> {
+// Cache pour les infos utilisateur
+const userCache = new Map<string, { displayName: string; avatarUrl: string }>();
+
+/**
+ * Récupère les infos utilisateur avec cache
+ */
+async function getUserInfo(userId: string, db: any): Promise<{ displayName: string; avatarUrl: string }> {
+  if (userCache.has(userId)) {
+    return userCache.get(userId)!;
+  }
+
+  try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      const info = {
+        displayName: userData.displayName || userData.display_name || 'Talent',
+        avatarUrl: userData.avatarUrl || userData.photoUrl || userData.photo_url || '/assets/images/app_launcher_icon.png'
+      };
+      userCache.set(userId, info);
+      return info;
+    }
+  } catch (e) {
+    console.warn('Erreur récupération utilisateur:', userId);
+  }
+
+  const defaultInfo = {
+    displayName: 'Talent',
+    avatarUrl: '/assets/images/app_launcher_icon.png'
+  };
+  userCache.set(userId, defaultInfo);
+  return defaultInfo;
+}
+
+// Récupère les vidéos depuis deux sources :
+// 1. users/{userId}/performances (nouvelle structure)
+// 2. users/{userId}/publication (ancienne structure Flutter)
+export async function fetchVideoFeed(options?: {
+  userId?: string;
+  followingUsers?: Set<string>;
+  recentlySeenVideos?: Set<string>;
+}): Promise<FeedPost[]> {
   const db = getFirestoreDb();
 
   try {
-    const q = query(
-      collectionGroup(db, 'publication'),
-      orderBy('time_posted', 'desc')
-    );
-    const snap = await getDocs(q);
+    const allVideos: FeedPost[] = [];
+    const userInfoPromises = new Map<string, Promise<{ displayName: string; avatarUrl: string }>>();
 
-    if (snap.empty) return [];
+    // ========== SOURCE 1 : PERFORMANCES ==========
+    console.log('📹 Chargement des vidéos depuis performances...');
+    try {
+      const performancesQuery = query(
+        collectionGroup(db, 'performances'),
+        orderBy('createdAt', 'desc')
+      );
+      const performancesSnap = await getDocs(performancesQuery);
 
-    const items: FeedPost[] = [];
+      for (const docSnap of performancesSnap.docs) {
+        const data = docSnap.data() as any;
 
-    snap.forEach((docSnap) => {
-      const data = docSnap.data() as any;
+        const videoUrl = data.videoUrl?.trim();
+        if (!videoUrl) continue;
 
-      // Dans Firestore, les champs viennent de Flutter avec des noms snake_case :
-      // postVido, post_photo, post_title, post_description, ashtag, type, etc.
-      const rawUrl = (data.postVido as string | undefined) ?? (data.post_vido as string | undefined);
-      const videoUrl = rawUrl?.trim();
+        // Récupérer l'ID utilisateur depuis le chemin
+        const pathParts = docSnap.ref.path.split('/');
+        const userId = pathParts[1];
 
-      // On garde seulement les docs avec un champ vidéo non vide
-      if (!videoUrl) return;
+        // Récupérer les infos utilisateur EN PARALLÈLE
+        if (!userInfoPromises.has(userId)) {
+          userInfoPromises.set(userId, getUserInfo(userId, db));
+        }
 
-      const createdAt: string =
-        data.time_posted && data.time_posted.toDate
-          ? data.time_posted.toDate().toLocaleDateString()
-          : '';
+        const createdAt: string = data.createdAt && data.createdAt.toDate
+          ? data.createdAt.toDate().toISOString()
+          : new Date().toISOString();
 
-      // Hashtags : on combine "ashtag" (string) et "type" (liste de strings)
-      const hashtags: string[] = [];
-      if (typeof data.ashtag === 'string' && data.ashtag.trim()) {
-        hashtags.push(
-          ...data.ashtag
-            .trim()
-            .split(/\s+/)
-            .filter((t: string) => t.length > 0)
-        );
+        const hashtags: string[] = Array.isArray(data.hashtags) 
+          ? data.hashtags.filter((t: unknown) => typeof t === 'string' && (t as string).trim().length > 0)
+          : [];
+
+        allVideos.push({
+          id: `perf_${docSnap.id}`,
+          userId: userId,
+          userName: 'Talent', // Sera remplacé après
+          userAvatar: '/assets/images/app_launcher_icon.png', // Sera remplacé après
+          type: 'video',
+          url: videoUrl,
+          thumbnail: data.thumbnailUrl || '/assets/images/app_launcher_icon.png',
+          caption: data.caption || data.description || '',
+          likes: data.likes || 0,
+          shares: data.shares || 0,
+          comments: data.comments || 0,
+          createdAt,
+          hashtags,
+          docPath: docSnap.ref.path
+        });
       }
-      if (Array.isArray(data.type)) {
-        hashtags.push(
-          ...data.type.filter((t: unknown) => typeof t === 'string' && (t as string).trim().length > 0)
-        );
+
+      console.log(`✅ ${performancesSnap.size} vidéos chargées depuis performances`);
+    } catch (e) {
+      console.warn('⚠️ Erreur chargement performances:', e);
+    }
+
+    // ========== SOURCE 2 : PUBLICATION (Flutter) ==========
+    console.log('📹 Chargement des vidéos depuis publication...');
+    try {
+      const publicationQuery = query(
+        collectionGroup(db, 'publication'),
+        orderBy('time_posted', 'desc')
+      );
+      const publicationSnap = await getDocs(publicationQuery);
+
+      for (const docSnap of publicationSnap.docs) {
+        const data = docSnap.data() as any;
+
+        const rawUrl = (data.postVido as string | undefined) ?? (data.post_vido as string | undefined);
+        const videoUrl = rawUrl?.trim();
+        if (!videoUrl) continue;
+
+        // Récupérer l'ID utilisateur depuis le chemin
+        const pathParts = docSnap.ref.path.split('/');
+        const userId = pathParts[1];
+
+        // Récupérer les infos utilisateur EN PARALLÈLE
+        if (!userInfoPromises.has(userId)) {
+          userInfoPromises.set(userId, getUserInfo(userId, db));
+        }
+
+        const createdAt: string = data.time_posted && data.time_posted.toDate
+          ? data.time_posted.toDate().toISOString()
+          : new Date().toISOString();
+
+        // Hashtags : combiner "ashtag" et "type"
+        const hashtags: string[] = [];
+        if (typeof data.ashtag === 'string' && data.ashtag.trim()) {
+          hashtags.push(
+            ...data.ashtag
+              .trim()
+              .split(/\s+/)
+              .filter((t: string) => t.length > 0)
+          );
+        }
+        if (Array.isArray(data.type)) {
+          hashtags.push(
+            ...data.type.filter((t: unknown) => typeof t === 'string' && (t as string).trim().length > 0)
+          );
+        }
+
+        allVideos.push({
+          id: `pub_${docSnap.id}`,
+          userId: userId,
+          userName: data.nomPoster || 'Talent',
+          userAvatar: data.post_photo || '/assets/images/app_launcher_icon.png',
+          type: 'video',
+          url: videoUrl,
+          thumbnail: data.post_photo || '',
+          caption: data.post_description || '',
+          likes: Array.isArray(data.likes) ? data.likes.length : 0,
+          shares: data.num_votes ?? 0,
+          comments: data.num_comments ?? 0,
+          createdAt,
+          hashtags,
+          docPath: docSnap.ref.path
+        });
       }
 
-      items.push({
-        id: docSnap.id,
-        userId: (data.post_user && data.post_user.id) || '',
-        userName: data.nomPoster || 'Talent',
-        userAvatar: data.post_photo || '/assets/images/Sans_titre-2_(4).png',
-        type: 'video',
-        url: videoUrl,
-        thumbnail: data.post_photo || '',
-        caption: data.post_description || '',
-        likes: Array.isArray(data.likes) ? data.likes.length : 0,
-        shares: data.num_votes ?? 0,
-        comments: data.num_comments ?? 0,
-        createdAt,
-        hashtags,
-        docPath: docSnap.ref.path
-      });
+      console.log(`✅ ${publicationSnap.size} vidéos chargées depuis publication`);
+    } catch (e) {
+      console.warn('⚠️ Erreur chargement publication:', e);
+    }
+
+    // Attendre que toutes les infos utilisateur soient chargées EN PARALLÈLE
+    console.log('⏳ Chargement des infos utilisateur...');
+    const userInfoResults = await Promise.all(userInfoPromises.values());
+    const userIds = Array.from(userInfoPromises.keys());
+    
+    // Mettre à jour les vidéos avec les infos utilisateur
+    allVideos.forEach(video => {
+      const userIndex = userIds.indexOf(video.userId);
+      if (userIndex !== -1 && userInfoResults[userIndex]) {
+        const userInfo = userInfoResults[userIndex];
+        video.userName = userInfo.displayName;
+        video.userAvatar = userInfo.avatarUrl;
+      }
     });
 
-    return items;
+    console.log(`✅ TOTAL: ${allVideos.length} vidéos chargées (performances + publication)`);
+    
+    // Appliquer l'algorithme de tri intelligent
+    const sortedVideos = sortVideosByAlgorithm(allVideos, options);
+    
+    return sortedVideos;
   } catch (e) {
-    console.error('Erreur chargement vidéos Firestore (publication):', e);
+    console.error('❌ Erreur chargement vidéos:', e);
     return [];
   }
 }
+
 

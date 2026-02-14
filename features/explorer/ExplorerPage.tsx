@@ -123,6 +123,7 @@ const ExplorerPage: React.FC<{ userType: UserType }> = ({ userType }) => {
                       muted
                       loop
                       playsInline
+                      preload="metadata"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                     <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-bold uppercase tracking-widest text-[#19DB8A]">

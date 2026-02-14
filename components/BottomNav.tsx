@@ -2,7 +2,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { UserType } from '../types';
-import { IconFeed, IconNews, IconPerf, IconLive, IconProfile } from './Icons';
+import { IconFeed, IconNews, IconPerf, IconLive, IconWallet, IconProfile } from './Icons';
 
 interface BottomNavProps {
   userType: UserType;
@@ -31,6 +31,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
     }
 
     items.push({ icon: <IconLive />, label: 'Live', path: '/live-match' });
+    items.push({ icon: <IconWallet />, label: 'Wallet', path: '/wallet' });
     items.push({ icon: <IconProfile />, label: 'Profil', path: '/profile' });
 
     return items;

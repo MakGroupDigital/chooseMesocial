@@ -1,19 +1,21 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
-import { getAuth, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getAuth, type Auth, onAuthStateChanged, type User } from 'firebase/auth';
+import { getFirestore, type Firestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
 
+// Configuration Firebase depuis les variables d'environnement Vite
 const firebaseConfig = {
-  apiKey: 'AIzaSyCtL0WmFOvrcG0V_0ZSwq4TCnOHRVfGnJM',
-  authDomain: 'choose-me-l1izsi.firebaseapp.com',
-  projectId: 'choose-me-l1izsi',
-  storageBucket: 'choose-me-l1izsi.firebasestorage.app',
-  messagingSenderId: '5765431920',
-  appId: '1:5765431920:web:7e8f5ae884de10f7ef2ab5'
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCtL0WmFOvrcG0V_0ZSwq4TCnOHRVfGnJM',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'choose-me-l1izsi.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'choose-me-l1izsi',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'choose-me-l1izsi.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '5765431920',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:5765431920:web:7e8f5ae884de10f7ef2ab5'
 };
 
 let app: FirebaseApp | null = null;
-let auth: Auth | null = null;
-let db: Firestore | null = null;
+let authInstance: Auth | null = null;
+let dbInstance: Firestore | null = null;
 
 export function getFirebaseApp(): FirebaseApp {
   if (!app) {
@@ -23,16 +25,41 @@ export function getFirebaseApp(): FirebaseApp {
 }
 
 export function getFirebaseAuth(): Auth {
-  if (!auth) {
-    auth = getAuth(getFirebaseApp());
+  if (!authInstance) {
+    authInstance = getAuth(getFirebaseApp());
   }
-  return auth;
+  return authInstance;
 }
 
 export function getFirestoreDb(): Firestore {
-  if (!db) {
-    db = getFirestore(getFirebaseApp());
+  if (!dbInstance) {
+    dbInstance = getFirestore(getFirebaseApp());
+    // La persistance est activée par défaut dans Firestore v9+
+    // Pas besoin d'appeler enableMultiTabIndexedDbPersistence()
   }
-  return db;
+  return dbInstance;
 }
+
+// Hook pour l'authentification
+export function useAuth() {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const auth = getFirebaseAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  return { currentUser, loading };
+}
+
+// Exports pour compatibilité
+export const auth = getFirebaseAuth();
+export const db = getFirestoreDb();
+
 

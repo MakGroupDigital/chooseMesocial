@@ -111,6 +111,7 @@ const ReportageDetailPage: React.FC = () => {
             className="w-full h-56 object-cover"
             controls
             playsInline
+            preload="metadata"
           />
         </div>
       </div>
