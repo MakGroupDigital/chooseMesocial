@@ -109,12 +109,25 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
       const displayName = result.user.displayName || email.split('@')[0];
       const photoUrl = result.user.photoURL || undefined;
 
-      // Créer le profil utilisateur
-      await createUserProfile(uid, email, displayName, photoUrl);
-      
-      // Rediriger vers le choix du profil
-      navigate('/onboarding/type');
+      // Vérifier si l'utilisateur existe déjà
+      const db = getFirestoreDb();
+      const { doc, getDoc } = await import('firebase/firestore');
+      const userRef = doc(db, 'users', uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        // Créer le profil utilisateur pour un nouvel utilisateur
+        console.log('🆕 Première inscription Google - Création du profil');
+        await createUserProfile(uid, email, displayName, photoUrl);
+        // Rediriger vers le choix du profil
+        navigate('/onboarding/type');
+      } else {
+        // Utilisateur existant qui essaie de s'inscrire à nouveau
+        console.log('✅ Utilisateur existant - Redirection vers accueil');
+        navigate('/home');
+      }
     } catch (err: any) {
+      console.error('❌ Erreur inscription Google:', err);
       setError('Impossible de créer un compte avec Google.');
     } finally {
       setLoading(false);

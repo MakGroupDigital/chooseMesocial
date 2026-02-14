@@ -1,64 +1,179 @@
+# Choose-Me Web App 🏆
 
-# Choose-Me | Sports Social Network
+Plateforme de recrutement sportif d'élite - Application web React moderne avec algorithme de recommandation type TikTok.
 
-## 🌟 Vision
-**Choose-Me** est le premier réseau social sportif dédié aux talents africains. Il connecte les athlètes, les recruteurs, les clubs et la presse dans un écosystème moderne, performant et ludique.
+## 🚀 Fonctionnalités
 
-## 🛠 Architecture & Tech Stack
-- **Front-end**: React 18, TypeScript, Vite.
-- **Styling**: Tailwind CSS (Dark Mode par défaut).
-- **Icons**: Lucide React.
-- **AI Engine**: Google Gemini API (Analyse de scoutisme, pronostics intelligents).
-- **Mobile Experience**: Simulation iPhone 15 Pro Max ultra-réaliste pour le développement web.
+### 🎯 Feed Intelligent
+- Algorithme de recommandation type TikTok
+- Mélange contenu populaire et nouvelles découvertes
+- Boost pour les nouveaux créateurs
+- Détection de contenu viral
+- Personnalisation basée sur les abonnements
 
-## 👥 Rôles & Fonctionnalités
+### 👤 Profils Utilisateurs
+- Profils athlètes, recruteurs, clubs, presse
+- Vidéos de performance
+- Statistiques et informations détaillées
+- Système de follow/unfollow
 
-### 1. ⚽ Athlète (Talent)
-- **Home Feed**: Partagez vos performances via des vidéos et photos.
-- **Explorer**: Suivez l'actualité sportive et les articles de presse.
-- **Profil**: Bénéficiez d'un **Rapport de Scoutisme IA** basé sur vos statistiques et vidéos.
-- **Social**: Likez, partagez et interagissez avec les autres talents.
+### 🎥 Vidéos
+- Lecteur vidéo personnalisé
+- Upload et traitement de vidéos
+- Partage dynamique avec métadonnées
+- Likes, commentaires, partages
 
-### 2. 📰 Presse
-- **Publication**: Publiez des articles, reportages et actualités en temps réel.
-- **News Feed**: Gérez votre visibilité et suivez les performances des talents.
-- **Interactions**: Commentez et partagez les actualités marquantes.
+### 🎮 Matchs Live & Pronostics
+- Matchs en direct
+- Système de pronostics
+- Wallet virtuel
+- Classement des joueurs
 
-### 3. 🏟 Club & Recruteur
-- **Recherche de Talents**: Moteur de recherche avancé avec filtres par poste, pays et âge.
-- **Scouting**: Accédez aux rapports d'IA pour évaluer le potentiel des joueurs.
-- **Contact Direct**: Bouton de contact privilégié pour initier des négociations.
-- **Observation**: Suivez les performances vidéo des talents sans pouvoir poster de contenu.
+### 🔐 Authentification
+- Connexion email/mot de passe
+- Connexion Google (OAuth)
+- Gestion des sessions Firebase
 
-### 4. 🌍 Visiteur / Fan
-- **Entertainment**: Regardez les vidéos de performances, suivez l'actualité.
-- **Gaming**: Participez aux **Pronostics Live** sur les matchs de la CAN et autres compétitions.
-- **Social**: Likez, suivez vos joueurs préférés et partagez leurs exploits.
+## 🛠️ Technologies
 
-## 💹 Économie de l'App
-- **Wallet**: Portefeuille sécurisé pour gérer les gains de pronostics.
-- **Points CHOOSE**: Système de récompenses pour l'engagement des utilisateurs.
-- **Retraits**: Formulaire de retrait via solutions de paiement locales (Orange Money, etc.).
+- **React 19** - Framework UI
+- **TypeScript** - Typage statique
+- **Vite** - Build tool ultra-rapide
+- **Tailwind CSS v4** - Styling moderne
+- **Firebase** - Backend (Auth, Firestore, Storage)
+- **Lucide React** - Icônes
+- **React Router** - Navigation
 
-## 🚀 Installation & Développement
+## 📦 Installation
 
-1. Installer les dépendances :
-   ```bash
-   npm install
-   ```
-2. Lancer le serveur de développement :
-   ```bash
-   npm run dev
-   ```
-3. Build pour la production :
-   ```bash
-   npm run build
-   ```
+```bash
+# Installer les dépendances
+npm install
 
-## 🧠 Intelligence Artificielle
-L'application utilise le modèle **Gemini 3 Flash** pour :
-- Analyser les statistiques des joueurs et générer des rapports de scoutisme objectifs.
-- Analyser les matchs en direct pour fournir des insights de probabilité aux parieurs.
+# Lancer en développement
+npm run dev
+
+# Build pour production
+npm run build
+
+# Preview du build
+npm run preview
+```
+
+## 🔧 Configuration
+
+### Firebase
+Configurez vos credentials Firebase dans `services/firebase.ts` :
+
+```typescript
+const firebaseConfig = {
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'YOUR_AUTH_DOMAIN',
+  projectId: 'YOUR_PROJECT_ID',
+  storageBucket: 'YOUR_STORAGE_BUCKET',
+  messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+  appId: 'YOUR_APP_ID'
+};
+```
+
+### Variables d'environnement
+Créez un fichier `.env.local` :
+
+```env
+VITE_FIREBASE_API_KEY=your_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
+VITE_FIREBASE_PROJECT_ID=your_project_id
+```
+
+## 📁 Structure du Projet
+
+```
+choose-me web app/
+├── components/          # Composants réutilisables
+├── features/           # Features par domaine
+│   ├── auth/          # Authentification
+│   ├── home/          # Feed et dashboards
+│   ├── profile/       # Profils utilisateurs
+│   ├── content/       # Création de contenu
+│   ├── live_match/    # Matchs et pronostics
+│   └── wallet/        # Portefeuille virtuel
+├── services/          # Services (Firebase, API)
+├── utils/             # Utilitaires
+├── types.ts           # Types TypeScript
+└── App.tsx            # Composant principal
+```
+
+## 🎨 Algorithme de Feed
+
+L'algorithme de recommandation utilise plusieurs critères :
+
+- **Engagement** (0-50 pts) : Likes, commentaires, partages
+- **Fraîcheur** (0-30 pts) : Boost pour contenu récent
+- **Viral** (0-50 pts) : Détection de contenu qui monte
+- **Diversité** (-20 à +15 pts) : Évite la monotonie
+- **Abonnements** (+25 pts) : Boost pour créateurs suivis
+- **Aléatoire** (0-10 pts) : Découverte de nouveaux contenus
+
+Voir [ALGORITHME_FEED_TIKTOK.md](./ALGORITHME_FEED_TIKTOK.md) pour plus de détails.
+
+## 🔥 Firestore Collections
+
+- `users` - Profils utilisateurs
+- `users/{userId}/performances` - Vidéos de performance
+- `users/{userId}/publication` - Publications (legacy)
+- `matches` - Matchs en direct
+- `pronostics` - Pronostics des utilisateurs
+- `wallets` - Portefeuilles virtuels
+- `reportage` - Reportages
+
+## 🚀 Déploiement
+
+### Firebase Hosting
+
+```bash
+# Build
+npm run build
+
+# Déployer
+firebase deploy --only hosting
+```
+
+### Autres plateformes
+
+Le projet peut être déployé sur :
+- Vercel
+- Netlify
+- AWS Amplify
+- Google Cloud Run
+
+## 📱 PWA & Mobile
+
+L'application est optimisée pour mobile et peut être installée comme PWA :
+- Manifest.json configuré
+- Favicons et icônes générés
+- Support offline (via Firebase)
+- Optimisations tactiles
+
+## 🤝 Contribution
+
+1. Fork le projet
+2. Créez une branche (`git checkout -b feature/AmazingFeature`)
+3. Commit vos changements (`git commit -m 'Add AmazingFeature'`)
+4. Push vers la branche (`git push origin feature/AmazingFeature`)
+5. Ouvrez une Pull Request
+
+## 📄 Licence
+
+Ce projet est sous licence privée - Tous droits réservés.
+
+## 👥 Équipe
+
+Développé avec ❤️ par l'équipe Choose-Me
+
+## 📞 Support
+
+Pour toute question ou support, contactez-nous à : support@choose-me.app
 
 ---
-*Développé avec passion pour le sport Africain.*
+
+**Choose-Me** - Révolutionnez le recrutement sportif 🏆

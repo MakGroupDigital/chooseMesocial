@@ -1,5 +1,7 @@
 import '/core/flutter_flow/flutter_flow_util.dart';
-import '/features/live_match/services/football_api_service.dart';
+import '/features/live_match/services/thesportsdb_api_service.dart';
+import '/features/live_match/services/match_sync_service.dart';
+import '/core/backend/backend.dart';
 import 'matches_list_widget.dart' show MatchesListWidget;
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -8,8 +10,9 @@ class MatchesListModel extends FlutterFlowModel<MatchesListWidget> {
   /// State fields for stateful widgets in this page.
   final unfocusNode = FocusNode();
   
-  // Service API Football
-  final FootballApiService _apiService = FootballApiService.instance;
+  // Services
+  final TheSportsDbApiService _apiService = TheSportsDbApiService.instance;
+  final MatchSyncService _syncService = MatchSyncService.instance;
   
   // État des données
   List<MatchData> matches = [];

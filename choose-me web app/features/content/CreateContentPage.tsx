@@ -1,42 +1,62 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Camera,
-  Video,
-  Image as ImageIcon,
-  ChevronLeft,
-  Send,
+  X,
+  FlipHorizontal,
   Sparkles,
-  Settings2,
-  RefreshCw,
+  Check,
+  Loader2,
   Upload,
-  Pause,
-  Play,
-  Save
+  Volume2,
+  VolumeX,
+  Zap
 } from 'lucide-react';
 import { UserType } from '../../types';
-import Button from '../../components/Button';
+import { uploadPerformanceVideo } from '../../services/performanceService';
+import { getFirebaseAuth, getFirestoreDb } from '../../services/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { permissionService } from '../../services/permissionService';
 
 const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
+  
   const [caption, setCaption] = useState('');
-  const [title, setTitle] = useState('');
   const [uploading, setUploading] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
-  const [source, setSource] = useState<'camera' | 'upload' | null>(null);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [showCaptionInput, setShowCaptionInput] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [brightness, setBrightness] = useState(100);
+  const [showSettings, setShowSettings] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAthlete = userType === UserType.ATHLETE;
-  const isPress = userType === UserType.PRESS;
 
+  // Timer pour l'enregistrement
   useEffect(() => {
-    // Nettoyer le flux quand on quitte la page
+    let interval: NodeJS.Timeout;
+    if (recording) {
+      interval = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setRecordingTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [recording]);
+
+  // Démarrer la caméra automatiquement
+  useEffect(() => {
+    startCamera();
     return () => {
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
@@ -44,276 +64,502 @@ const CreateContentPage: React.FC<{ userType: UserType }> = ({ userType }) => {
       if (recordedUrl) {
         URL.revokeObjectURL(recordedUrl);
       }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
-  }, [stream, recordedUrl]);
+  }, []);
 
   const startCamera = async () => {
     try {
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
       }
+      
+      // Demander les permissions avant d'accéder à la caméra
+      const cameraGranted = await permissionService.requestCamera();
+      if (!cameraGranted) {
+        alert('Permission caméra refusée. Impossible de filmer.');
+        return;
+      }
+
+      const micGranted = await permissionService.requestMicrophone();
+      
+      // Demander 4K (3840x2160) ou la meilleure résolution disponible
       const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: cameraFacing },
-        audio: true
+        video: { 
+          facingMode: cameraFacing,
+          width: { ideal: 3840, min: 1080 },
+          height: { ideal: 2160, min: 1920 },
+          aspectRatio: { ideal: 9/16 }
+        },
+        audio: micGranted
       });
+      
       setStream(newStream);
-      setSource('camera');
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         videoRef.current.play().catch(() => {});
       }
-      if (recordedUrl) {
-        URL.revokeObjectURL(recordedUrl);
-        setRecordedUrl(null);
-      }
-      setFileName(null);
     } catch (e) {
-      alert("Impossible d'accéder à la caméra. Vérifiez les permissions du navigateur.");
+      console.error('Erreur caméra:', e);
+      alert("Impossible d'accéder à la caméra. Vérifiez les permissions.");
     }
   };
 
-  const toggleRecording = () => {
-    if (!stream) {
-      startCamera();
-      return;
+  const toggleAudio = () => {
+    if (stream) {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = !audioEnabled;
+      });
+      setAudioEnabled(!audioEnabled);
     }
-    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-      const chunks: BlobPart[] = [];
-      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        if (recordedUrl) {
-          URL.revokeObjectURL(recordedUrl);
-        }
-        setRecordedUrl(url);
-        setSource('camera');
-      };
-      recorder.start();
-      setMediaRecorder(recorder);
-      setRecording(true);
-    } else if (mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
+  };
+
+  const startRecording = async () => {
+    if (!stream || !videoRef.current) return;
+
+    chunksRef.current = [];
+    
+    // Créer un canvas pour capturer en format portrait 9:16 en 4K
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Résolution 4K en portrait (2160x3840)
+    canvas.width = 2160;
+    canvas.height = 3840;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Créer un stream depuis le canvas
+    const canvasStream = canvas.captureStream(30);
+
+    // Ajouter l'audio du stream original
+    stream.getAudioTracks().forEach(track => {
+      canvasStream.addTrack(track);
+    });
+
+    const recorder = new MediaRecorder(canvasStream, {
+      mimeType: 'video/webm;codecs=vp9',
+      videoBitsPerSecond: 8000000 // 8 Mbps pour 4K
+    });
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        chunksRef.current.push(e.data);
+      }
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      setRecordedBlob(blob);
+      setRecordedUrl(url);
+      setShowCaptionInput(true);
+
+      // Arrêter la caméra
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        setStream(null);
+      }
+    };
+
+    recorder.start();
+    mediaRecorderRef.current = recorder;
+    setRecording(true);
+
+    // Fonction pour dessiner les frames
+    const drawFrame = () => {
+      if (!videoRef.current || !ctx || !mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+        return;
+      }
+
+      ctx.save();
+
+      // Calculer les dimensions pour remplir le canvas en portrait
+      const video = videoRef.current;
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+
+      // Calculer le ratio pour remplir le canvas
+      const videoRatio = videoWidth / videoHeight;
+      const canvasRatio = canvasWidth / canvasHeight;
+
+      let drawWidth, drawHeight, offsetX, offsetY;
+
+      if (videoRatio > canvasRatio) {
+        // Vidéo plus large
+        drawHeight = canvasHeight;
+        drawWidth = canvasHeight * videoRatio;
+        offsetX = (canvasWidth - drawWidth) / 2;
+        offsetY = 0;
+      } else {
+        // Vidéo plus haute
+        drawWidth = canvasWidth;
+        drawHeight = canvasWidth / videoRatio;
+        offsetX = 0;
+        offsetY = (canvasHeight - drawHeight) / 2;
+      }
+
+      // Appliquer le mirroring pour la caméra selfie
+      if (cameraFacing === 'user') {
+        ctx.translate(canvasWidth, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, canvasWidth - offsetX - drawWidth, offsetY, drawWidth, drawHeight);
+      } else {
+        ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
+      }
+
+      ctx.restore();
+
+      animationFrameRef.current = requestAnimationFrame(drawFrame);
+    };
+
+    drawFrame();
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
       setRecording(false);
+      mediaRecorderRef.current = null;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('video/')) {
-      alert('Merci de sélectionner un fichier vidéo.');
-      return;
-    }
-    const url = URL.createObjectURL(file);
+  const switchCamera = () => {
+    setCameraFacing((prev) => (prev === 'user' ? 'environment' : 'user'));
+    setTimeout(() => startCamera(), 100);
+  };
+
+  const retakeVideo = () => {
     if (recordedUrl) {
       URL.revokeObjectURL(recordedUrl);
     }
-    setRecordedUrl(url);
-    setSource('upload');
-    setFileName(file.name);
+    setRecordedUrl(null);
+    setRecordedBlob(null);
+    setCaption('');
+    setShowCaptionInput(false);
+    startCamera();
+  };
+
+  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('video/')) {
+      alert('Veuillez sélectionner un fichier vidéo');
+      return;
+    }
+
+    // Arrêter la caméra si active
     if (stream) {
       stream.getTracks().forEach((t) => t.stop());
       setStream(null);
     }
+
+    // Créer le blob et l'URL
+    const url = URL.createObjectURL(file);
+    setRecordedBlob(file);
+    setRecordedUrl(url);
+    setShowCaptionInput(true);
   };
 
-  const switchCameraFacing = () => {
-    setCameraFacing((prev) => (prev === 'user' ? 'environment' : 'user'));
-    // Redémarre la caméra avec la nouvelle orientation
-    void startCamera();
-  };
+  const handlePublish = async () => {
+    if (!recordedBlob || !caption.trim()) {
+      alert('Veuillez ajouter une description');
+      return;
+    }
 
-  const handlePublish = () => {
     setUploading(true);
-    setTimeout(() => {
+    try {
+      const auth = getFirebaseAuth();
+      const db = getFirestoreDb();
+      const currentUser = auth.currentUser;
+
+      if (!currentUser) {
+        alert('Vous devez être connecté');
+        setUploading(false);
+        return;
+      }
+
+      const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+      const userData = userSnap.data() as any;
+
+      console.log('📤 Publication de la vidéo...');
+
+      await uploadPerformanceVideo(
+        currentUser.uid,
+        userData?.displayName || currentUser.email || 'Utilisateur',
+        userData?.photoUrl,
+        recordedBlob,
+        caption,
+        ''
+      );
+
+      console.log('✅ Vidéo publiée avec succès');
+
+      // Rediriger vers le profil immédiatement
+      navigate('/profile');
+
+      // Afficher un message de succès
+      setTimeout(() => {
+        alert('Vidéo publiée ! Le transcodage en MP4 prendra ~60 secondes.');
+      }, 500);
+    } catch (e) {
+      console.error('❌ Erreur publication:', e);
+      alert('Erreur lors de la publication. Veuillez réessayer.');
       setUploading(false);
-      navigate('/home');
-    }, 2000);
+    }
   };
 
-  const handleSaveDraft = () => {
-    // Ici on pourrait sauvegarder dans Firestore / Storage en brouillon.
-    alert('Votre performance est sauvegardée en brouillon (simulation).');
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] p-6 flex flex-col">
-      <header className="flex items-center justify-between mb-4 pt-4">
-        <button onClick={() => navigate(-1)} className="text-white/60">
-          <ChevronLeft size={28} />
-        </button>
-        <div className="flex flex-col items-center">
-          <span className="text-[11px] uppercase tracking-[0.24em] text-[#19DB8A] font-semibold">
-            Camera ChooseMe
-          </span>
-          <h1 className="text-base font-readex font-bold">
-            {isAthlete ? 'Capturer une performance' : 'Créer un reportage'}
-          </h1>
-        </div>
-        <button className="text-white/60">
-          <Settings2 size={22} />
-        </button>
-      </header>
+    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      {/* Vidéo Stream - Format portrait mobile */}
+      <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center">
+        {recordedUrl ? (
+          <video
+            src={recordedUrl}
+            className="h-full w-auto max-w-full"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            className="h-full w-auto max-w-full"
+            autoPlay
+            muted
+            playsInline
+            style={{
+              transform: cameraFacing === 'user' ? 'scaleX(-1)' : 'none',
+              filter: `brightness(${brightness}%)`
+            }}
+          />
+        )}
+        
+        {/* Canvas caché pour l'enregistrement */}
+        <canvas ref={canvasRef} className="hidden" />
 
-      <div className="flex-1 space-y-5">
-        {/* CAMERA / PREVIEW */}
-        <div className="aspect-[9/16] bg-[#0A0A0A] border border-white/10 rounded-[32px] overflow-hidden relative shadow-2xl flex items-center justify-center">
-          {recordedUrl ? (
-            <video
-              src={recordedUrl}
-              className="w-full h-full object-cover"
-              controls
-              playsInline
-            />
-          ) : (
-            <video
-              ref={videoRef}
-              className="w-full h-full object-cover"
-              autoPlay
-              muted
-              playsInline
-            />
-          )}
-          {/* Overlay dégradé haut/bas */}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/70" />
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/50 pointer-events-none" />
 
-          {/* Contrôles caméra sur l’aperçu */}
-          <div className="absolute top-3 left-3 flex items-center gap-2">
-            <span className="px-2 py-1 rounded-full bg-black/60 text-[10px] text-white/70 border border-white/15 uppercase tracking-[0.18em]">
-              {source === 'upload' ? 'Importé' : 'Live'}
-            </span>
-            {fileName && (
-              <span className="px-2 py-1 rounded-full bg-black/40 text-[9px] text-white/60 border border-white/10 max-w-[120px] truncate">
-                {fileName}
-              </span>
-            )}
-          </div>
+        {/* Header avec contrôles */}
+        <div className="absolute top-0 left-0 right-0 p-4 flex items-center justify-between z-10 safe-area-top">
+          <button
+            onClick={() => navigate(-1)}
+            className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/70 transition-all"
+          >
+            <X size={24} />
+          </button>
 
-          <div className="absolute top-3 right-3 flex gap-2">
-            <button
-              type="button"
-              onClick={switchCameraFacing}
-              className="p-2 rounded-full bg-black/50 border border-white/15 text-white"
-            >
-              <RefreshCw size={16} />
-            </button>
-          </div>
-
-          <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-3">
-            <div className="flex items-center gap-4">
-              <label className="flex flex-col items-center gap-1 cursor-pointer">
-                <div className="w-11 h-11 rounded-full bg-black/60 border border-white/20 flex items-center justify-center text-white">
-                  <Upload size={18} />
-                </div>
-                <span className="text-[9px] text-white/60 uppercase tracking-[0.16em]">
-                  Importer
-                </span>
-                <input
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-              </label>
-
+          {!recordedUrl && (
+            <div className="flex gap-2">
               <button
-                type="button"
-                onClick={toggleRecording}
-                className="relative flex items-center justify-center"
+                onClick={() => setShowSettings(!showSettings)}
+                className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/70 transition-all"
               >
-                <div className="w-16 h-16 rounded-full bg-[#19DB8A] shadow-[0_0_40px_rgba(25,219,138,0.6)] flex items-center justify-center border-4 border-black">
-                  {recording ? (
-                    <Pause size={22} className="text-black" />
+                <Zap size={20} />
+              </button>
+              <button
+                onClick={switchCamera}
+                className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/70 transition-all"
+              >
+                <FlipHorizontal size={20} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Panneau de réglages */}
+        {showSettings && !recordedUrl && (
+          <div className="absolute top-20 right-4 bg-black/80 backdrop-blur-md rounded-2xl p-4 z-20 w-64 border border-white/10">
+            <div className="space-y-4">
+              {/* Contrôle audio */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {audioEnabled ? (
+                    <Volume2 size={18} className="text-white" />
                   ) : (
-                    <Video size={22} className="text-black" />
+                    <VolumeX size={18} className="text-white/50" />
                   )}
+                  <span className="text-white text-sm font-semibold">Audio</span>
                 </div>
-              </button>
+                <button
+                  onClick={toggleAudio}
+                  className={`w-12 h-6 rounded-full transition-all ${
+                    audioEnabled ? 'bg-[#19DB8A]' : 'bg-white/20'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                      audioEnabled ? 'translate-x-6' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={startCamera}
-                className="flex flex-col items-center gap-1 text-white/70"
-              >
-                <div className="w-11 h-11 rounded-full bg-black/60 border border-white/20 flex items-center justify-center">
-                  <Camera size={18} />
+              {/* Contrôle luminosité */}
+              <div>
+                <label className="text-white text-sm font-semibold mb-2 block">
+                  Luminosité
+                </label>
+                <input
+                  type="range"
+                  min="50"
+                  max="150"
+                  value={brightness}
+                  onChange={(e) => setBrightness(Number(e.target.value))}
+                  className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#19DB8A]"
+                />
+                <div className="text-white/60 text-xs mt-1 text-center">
+                  {brightness}%
                 </div>
-                <span className="text-[9px] uppercase tracking-[0.16em]">
-                  Réinitialiser
-                </span>
-              </button>
+              </div>
             </div>
-
-            <p className="text-[9px] text-white/50">
-              Conseillé : filmer en vertical 9:16, bonne lumière et cadrage stable.
-            </p>
           </div>
-        </div>
+        )}
 
-        <div className="space-y-4">
-          {isPress && (
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Titre de l'article</label>
-              <input 
-                type="text" 
-                placeholder="Ex: Nouveau transfert historique..."
-                className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white focus:border-[#19DB8A] transition-all"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
+        {/* Timer d'enregistrement */}
+        {recording && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10">
+            <div className="bg-red-500/90 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+              <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+              <span className="text-white font-bold text-sm">{formatTime(recordingTime)}</span>
             </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Légende / Contenu</label>
-            <textarea 
-              rows={4}
-              placeholder={isAthlete ? "Décrivez votre performance..." : "Écrivez votre article ici..."}
-              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white focus:border-[#19DB8A] transition-all resize-none"
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-            />
           </div>
-        </div>
+        )}
 
-        {isAthlete && (
-           <div className="bg-[#19DB8A]/5 border border-[#19DB8A]/20 p-4 rounded-2xl flex gap-3 items-center">
-              <Sparkles className="text-[#19DB8A]" size={20} />
-              <p className="text-[10px] text-white/60 leading-tight">
-                <span className="text-[#19DB8A] font-bold">Astuce:</span> Les vidéos de haute qualité (HD) et bien cadrées sont priorisées par notre IA de scoutisme pour les recruteurs.
-              </p>
-           </div>
+        {/* Indicateur de caméra prête */}
+        {!recording && !recordedUrl && stream && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10">
+            <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full">
+              <span className="text-white text-sm font-semibold">
+                Appuyez pour enregistrer
+              </span>
+            </div>
+          </div>
         )}
       </div>
 
-      <div className="mt-6 space-y-3">
-        <div className="flex gap-3">
-          <Button
-            onClick={handlePublish}
-            disabled={uploading || (!caption && !title) || !recordedUrl}
-            className="flex-1 py-4 text-sm shadow-2xl shadow-[#19DB8A]/10"
-          >
-            {uploading ? 'Publication en cours...' : (
-              <>
-                <Send size={18} /> {isAthlete ? 'Publier la performance' : 'Publier le contenu'}
-              </>
-            )}
-          </Button>
-          <Button
-            onClick={handleSaveDraft}
-            disabled={uploading}
-            className="px-4 py-4 text-xs bg-[#0A0A0A] border border-white/10 text-white/70"
-          >
-            <Save size={16} />
-          </Button>
+      {/* Contrôles d'enregistrement (mode caméra) */}
+      {!recordedUrl && (
+        <div className="bg-gradient-to-t from-black via-black/95 to-transparent p-6 safe-area-bottom">
+          <div className="flex justify-center items-center gap-6">
+            {/* Bouton Import */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center gap-2 group"
+            >
+              <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-md border-2 border-white/30 flex items-center justify-center group-hover:border-white/50 transition-all">
+                <Upload size={24} className="text-white" />
+              </div>
+              <span className="text-white text-xs font-semibold">Importer</span>
+            </button>
+
+            {/* Bouton Enregistrer */}
+            <button
+              onClick={recording ? stopRecording : startRecording}
+              className="relative group"
+              disabled={!stream}
+            >
+              {recording ? (
+                <div className="w-20 h-20 rounded-2xl bg-red-500 shadow-lg shadow-red-500/50 flex items-center justify-center animate-pulse">
+                  <div className="w-8 h-8 bg-white rounded-sm" />
+                </div>
+              ) : (
+                <div className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center group-hover:border-[#19DB8A] transition-all">
+                  <div className="w-16 h-16 rounded-full bg-red-500 group-hover:bg-red-600 transition-all" />
+                </div>
+              )}
+            </button>
+
+            {/* Espace vide pour équilibrer */}
+            <div className="w-14" />
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Input file caché */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={handleFileImport}
+      />
+
+      {/* Panneau de légende (après enregistrement) */}
+      {showCaptionInput && recordedUrl && (
+        <div className="bg-gradient-to-t from-black via-black/95 to-transparent p-6 safe-area-bottom">
+          <div className="space-y-4">
+            <div>
+              <label className="text-white text-sm font-semibold mb-2 block">
+                Décrivez votre performance
+              </label>
+              <textarea
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                placeholder="Ajoutez une description..."
+                className="w-full bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 text-white placeholder-white/50 focus:border-[#19DB8A] focus:outline-none resize-none"
+                rows={3}
+                maxLength={150}
+              />
+              <div className="text-right text-white/50 text-xs mt-1">
+                {caption.length}/150
+              </div>
+            </div>
+
+            {isAthlete && (
+              <div className="bg-[#19DB8A]/10 border border-[#19DB8A]/30 rounded-xl p-3 flex items-start gap-2">
+                <Sparkles className="text-[#19DB8A] flex-shrink-0 mt-0.5" size={16} />
+                <p className="text-white/80 text-xs leading-relaxed">
+                  Les vidéos de qualité sont priorisées par notre IA pour les recruteurs
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={retakeVideo}
+                className="flex-1 py-4 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white font-bold hover:bg-white/20 transition-all"
+              >
+                Refaire
+              </button>
+              <button
+                onClick={handlePublish}
+                disabled={uploading || !caption.trim()}
+                className="flex-1 py-4 rounded-full bg-[#19DB8A] text-black font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#19DB8A]/90 transition-all"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin" />
+                    Publication...
+                  </>
+                ) : (
+                  <>
+                    <Check size={20} />
+                    Publier
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

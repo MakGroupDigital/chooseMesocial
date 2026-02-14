@@ -13,6 +13,7 @@ export interface UserProfile {
   displayName: string;
   type: UserType;
   country: string;
+  city?: string;
   avatarUrl?: string;
   sport?: string;
   position?: string;

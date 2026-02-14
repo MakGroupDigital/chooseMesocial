@@ -37,13 +37,62 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
     setLoading(true);
     setError(null);
     try {
+      console.log('🔵 Début connexion Google...');
       const auth = getFirebaseAuth();
+      console.log('✅ Auth instance récupérée');
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      onLogin();
-      navigate('/home');
+      console.log('✅ Provider Google créé');
+      console.log('🔵 Ouverture popup Google...');
+      const result = await signInWithPopup(auth, provider);
+      console.log('✅ Popup fermée, résultat:', result.user.email);
+      
+      // Créer ou mettre à jour le document utilisateur dans Firestore
+      const { getFirestoreDb } = await import('../../services/firebase');
+      const { doc, getDoc, setDoc } = await import('firebase/firestore');
+      const db = getFirestoreDb();
+      const userRef = doc(db, 'users', result.user.uid);
+      
+      // Vérifier si le document existe déjà
+      const userSnap = await getDoc(userRef);
+      
+      if (!userSnap.exists()) {
+        // Créer le document pour un nouvel utilisateur
+        console.log('🆕 Première connexion - Création du document utilisateur pour:', result.user.email);
+        await setDoc(userRef, {
+          email: result.user.email,
+          displayName: result.user.displayName || result.user.email?.split('@')[0] || 'Utilisateur',
+          photoUrl: result.user.photoURL,
+          type: 'visitor', // Type temporaire
+          statut: 'no',
+          etat: 'nv',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        console.log('✅ Document créé - Redirection vers choix du profil');
+        onLogin();
+        // Rediriger vers le choix du type de profil pour les nouveaux utilisateurs
+        navigate('/onboarding/type');
+      } else {
+        console.log('✅ Utilisateur existant - Connexion directe');
+        onLogin();
+        // Rediriger vers l'accueil pour les utilisateurs existants
+        navigate('/home');
+      }
     } catch (err: any) {
-      setError('Impossible de vous connecter avec Google.');
+      console.error('❌ Erreur connexion Google:', err);
+      console.error('Code erreur:', err.code);
+      console.error('Message:', err.message);
+      
+      let errorMessage = 'Impossible de vous connecter avec Google.';
+      if (err.code === 'auth/popup-blocked') {
+        errorMessage = 'La popup a été bloquée. Autorisez les popups pour ce site.';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Connexion annulée.';
+      } else if (err.code === 'auth/unauthorized-domain') {
+        errorMessage = 'Domaine non autorisé. Contactez l\'administrateur.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
