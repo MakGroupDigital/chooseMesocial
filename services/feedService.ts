@@ -1,4 +1,4 @@
-import { collectionGroup, getDocs, orderBy, query, collection, getDoc, doc } from 'firebase/firestore';
+import { collectionGroup, getDocs, query, orderBy, collection, getDoc, doc } from 'firebase/firestore';
 import { getFirestoreDb } from './firebase';
 import type { FeedPost } from '../types';
 import { sortVideosByAlgorithm } from './feedAlgorithm';
@@ -19,8 +19,22 @@ async function getUserInfo(userId: string, db: any): Promise<{ displayName: stri
     if (userDoc.exists()) {
       const userData = userDoc.data();
       const info = {
-        displayName: userData.displayName || userData.display_name || 'Talent',
-        avatarUrl: userData.avatarUrl || userData.photoUrl || userData.photo_url || '/assets/images/app_launcher_icon.png'
+        displayName:
+          userData.displayName ||
+          userData.display_name ||
+          userData.userName ||
+          userData.username ||
+          userData.nom ||
+          userData.nomPoster ||
+          userData.name ||
+          '',
+        avatarUrl:
+          userData.avatarUrl ||
+          userData.photoUrl ||
+          userData.photo_url ||
+          userData.post_photo ||
+          userData.photo ||
+          ''
       };
       userCache.set(userId, info);
       return info;
@@ -30,8 +44,8 @@ async function getUserInfo(userId: string, db: any): Promise<{ displayName: stri
   }
 
   const defaultInfo = {
-    displayName: 'Talent',
-    avatarUrl: '/assets/images/app_launcher_icon.png'
+    displayName: '',
+    avatarUrl: ''
   };
   userCache.set(userId, defaultInfo);
   return defaultInfo;
@@ -86,8 +100,19 @@ export async function fetchVideoFeed(options?: {
         allVideos.push({
           id: `perf_${docSnap.id}`,
           userId: userId,
-          userName: 'Talent', // Sera remplacé après
-          userAvatar: '/assets/images/app_launcher_icon.png', // Sera remplacé après
+          userName:
+            data.userName ||
+            data.username ||
+            data.nomPoster ||
+            data.displayName ||
+            data.display_name ||
+            '',
+          userAvatar:
+            data.userAvatar ||
+            data.avatarUrl ||
+            data.photoUrl ||
+            data.post_photo ||
+            '',
           type: 'video',
           url: videoUrl,
           thumbnail: data.thumbnailUrl || '/assets/images/app_launcher_icon.png',
@@ -154,8 +179,19 @@ export async function fetchVideoFeed(options?: {
         allVideos.push({
           id: `pub_${docSnap.id}`,
           userId: userId,
-          userName: data.nomPoster || 'Talent',
-          userAvatar: data.post_photo || '/assets/images/app_launcher_icon.png',
+          userName:
+            data.nomPoster ||
+            data.userName ||
+            data.displayName ||
+            data.display_name ||
+            data.username ||
+            '',
+          userAvatar:
+            data.post_photo ||
+            data.userAvatar ||
+            data.avatarUrl ||
+            data.photoUrl ||
+            '',
           type: 'video',
           url: videoUrl,
           thumbnail: data.post_photo || '',
@@ -184,8 +220,12 @@ export async function fetchVideoFeed(options?: {
       const userIndex = userIds.indexOf(video.userId);
       if (userIndex !== -1 && userInfoResults[userIndex]) {
         const userInfo = userInfoResults[userIndex];
-        video.userName = userInfo.displayName;
-        video.userAvatar = userInfo.avatarUrl;
+        // Conserver d'abord les infos du document vidéo, puis compléter depuis users/{id}.
+        video.userName = video.userName || userInfo.displayName || 'Talent';
+        video.userAvatar = video.userAvatar || userInfo.avatarUrl || '/assets/images/app_launcher_icon.png';
+      } else {
+        video.userName = video.userName || 'Talent';
+        video.userAvatar = video.userAvatar || '/assets/images/app_launcher_icon.png';
       }
     });
 
@@ -200,5 +240,3 @@ export async function fetchVideoFeed(options?: {
     return [];
   }
 }
-
-

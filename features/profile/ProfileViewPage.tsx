@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Edit2, MapPin, Share2, Award, Activity, BrainCircuit, Trophy, MessageSquare, UserPlus, Check, AlertCircle, Users, Plus, LogOut } from 'lucide-react';
+import { Edit2, MapPin, Share2, Award, Activity, BrainCircuit, Trophy, MessageSquare, UserPlus, Check, AlertCircle, Users, Plus, LogOut, Settings } from 'lucide-react';
 import { UserProfile, UserType } from '../../types';
 import Button from '../../components/Button';
 import CustomVideoPlayer from '../../components/CustomVideoPlayer';
@@ -133,6 +133,14 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
              >
                 <Share2 size={20} />
              </button>
+             {isOwnProfile && (
+               <button
+                 onClick={() => navigate('/settings')}
+                 className="p-2 bg-black/20 rounded-full text-white backdrop-blur-md hover:bg-black/30 transition-colors"
+               >
+                 <Settings size={20} />
+               </button>
+             )}
              {isOwnProfile && (
                <button onClick={() => navigate('/profile/edit')} className="p-2 bg-[#19DB8A] rounded-full text-white shadow-lg shadow-green-900/40">
                   <Edit2 size={20} />

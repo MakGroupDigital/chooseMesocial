@@ -74,9 +74,13 @@ const SUPPORTED_LEAGUES: Record<string, string> = {
 // Cache pour éviter trop de requêtes
 let matchesCache: { data: Match[]; timestamp: number } | null = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const REQUEST_DELAY_MS = 120;
+const UPCOMING_LIMIT = 8;
+const RECENT_LIMIT = 8;
 
 /**
- * Récupère les matchs du jour depuis TheSportsDB
+ * Récupère des matchs réels (live/à venir/récents) depuis TheSportsDB.
+ * L'API est gratuite et ne nécessite pas de compte côté client.
  */
 export async function fetchTodayMatches(): Promise<Match[]> {
   try {
@@ -88,63 +92,96 @@ export async function fetchTodayMatches(): Promise<Match[]> {
 
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
-    
-    console.log(`🔍 Récupération des matchs pour le ${dateStr}`);
+    console.log(`🔍 Récupération des matchs réels autour du ${dateStr}`);
     
     const allMatches: Match[] = [];
+    const seenEventIds = new Set<string>();
     
-    // Récupérer les matchs pour chaque ligue
+    // Récupérer les matchs pour chaque ligue (jour + prochains + récents)
     for (const [leagueName, leagueId] of Object.entries(SUPPORTED_LEAGUES)) {
       try {
-        const url = `${THESPORTSDB_BASE_URL}/eventsday.php?d=${dateStr}&l=${leagueId}`;
-        console.log(`📡 Requête: ${url}`);
-        
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.events && Array.isArray(data.events)) {
-          console.log(`✅ ${data.events.length} matchs trouvés pour ${leagueName}`);
-          
+        const endpointConfigs = [
+          `${THESPORTSDB_BASE_URL}/eventsday.php?d=${dateStr}&l=${leagueId}`,
+          `${THESPORTSDB_BASE_URL}/eventsnextleague.php?id=${leagueId}`,
+          `${THESPORTSDB_BASE_URL}/eventspastleague.php?id=${leagueId}`,
+        ];
+
+        for (const url of endpointConfigs) {
+          console.log(`📡 Requête: ${url}`);
+          const response = await fetch(url);
+          if (!response.ok) {
+            console.warn(`⚠️ Réponse API non OK (${response.status}) pour ${leagueName}`);
+            continue;
+          }
+
+          const data = await response.json();
+          if (!data?.events || !Array.isArray(data.events)) {
+            continue;
+          }
+
           for (const event of data.events) {
             try {
+              const eventId = String(event?.idEvent || '');
+              if (!eventId || seenEventIds.has(eventId)) {
+                continue;
+              }
+
               const match = parseTheSportsDbEvent(event, leagueName);
+              // N'injecter que des matchs réellement exploitables.
+              if (!match.teamAName || !match.teamBName) {
+                continue;
+              }
+
+              seenEventIds.add(eventId);
               allMatches.push(match);
             } catch (e) {
               console.warn('⚠️ Erreur parsing match:', e);
             }
           }
-        } else {
-          console.log(`ℹ️ Aucun match pour ${leagueName}`);
+
+          // Petite pause pour éviter de surcharger l'API
+          await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS));
         }
-        
-        // Petite pause pour éviter de surcharger l'API
-        await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
         console.error(`❌ Erreur pour ${leagueName}:`, error);
       }
     }
     
-    // Si aucun match trouvé, utiliser les données de test
+    // Si aucun match réel trouvé, retourner une liste vide (jamais de faux matchs)
     if (allMatches.length === 0) {
-      console.log('⚠️ Aucun match trouvé, utilisation des données de test');
-      return getTestMatches();
+      console.log('⚠️ Aucun match réel trouvé depuis l’API');
+      return [];
     }
     
+    // Garder un volume raisonnable côté UI tout en couvrant les 3 onglets
+    const now = Date.now();
+    const liveMatches = allMatches.filter(m => m.status === 'live');
+    const upcomingMatches = allMatches
+      .filter(m => m.status === 'scheduled' && m.startTime.getTime() >= now)
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+      .slice(0, UPCOMING_LIMIT);
+    const recentFinishedMatches = allMatches
+      .filter(m => m.status === 'finished')
+      .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
+      .slice(0, RECENT_LIMIT);
+    
+    const curatedMatches = [...liveMatches, ...upcomingMatches, ...recentFinishedMatches];
+    
     // Trier par heure de début
-    allMatches.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    curatedMatches.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
     
     // Mettre en cache
     matchesCache = {
-      data: allMatches,
+      data: curatedMatches,
       timestamp: Date.now()
     };
     
-    console.log(`✅ Total: ${allMatches.length} matchs récupérés`);
+    console.log(`✅ Total: ${curatedMatches.length} matchs réels récupérés`);
     
-    return allMatches;
+    return curatedMatches;
   } catch (error) {
     console.error('❌ Erreur récupération matchs:', error);
-    return getTestMatches();
+    return [];
   }
 }
 
@@ -154,44 +191,66 @@ export async function fetchTodayMatches(): Promise<Match[]> {
 function parseTheSportsDbEvent(event: any, leagueName: string): Match {
   // Parser la date et l'heure
   const dateStr = event.dateEvent;
-  const timeStr = event.strTime;
+  const timeStr = event.strTime || event.strTimeLocal;
   
   let startTime = new Date();
   if (dateStr) {
     startTime = new Date(dateStr);
     if (timeStr) {
-      const [hours, minutes] = timeStr.split(':');
-      startTime.setHours(parseInt(hours), parseInt(minutes));
+      const [hours, minutes] = String(timeStr).split(':');
+      const h = Number.parseInt(hours ?? '0', 10);
+      const m = Number.parseInt(minutes ?? '0', 10);
+      if (!Number.isNaN(h) && !Number.isNaN(m)) {
+        startTime.setHours(h, m, 0, 0);
+      }
     }
   }
   
   // Déterminer le statut
   let status: Match['status'] = 'scheduled';
-  const statusStr = event.strStatus || '';
+  const statusStr = String(event.strStatus || '').toLowerCase();
+  const hasScore =
+    event.intHomeScore !== null &&
+    event.intHomeScore !== undefined &&
+    event.intAwayScore !== null &&
+    event.intAwayScore !== undefined;
   
-  if (statusStr.includes('FT') || statusStr.includes('Finished')) {
+  if (
+    statusStr.includes('ft') ||
+    statusStr.includes('finished') ||
+    statusStr.includes('after penalties') ||
+    statusStr.includes('aet')
+  ) {
     status = 'finished';
-  } else if (statusStr.includes('Live') || statusStr.includes('1H') || 
-             statusStr.includes('2H') || statusStr.includes('HT')) {
+  } else if (
+    statusStr.includes('live') ||
+    statusStr.includes('1h') ||
+    statusStr.includes('2h') ||
+    statusStr.includes('ht') ||
+    statusStr.includes('in play')
+  ) {
     status = 'live';
-  } else if (statusStr.includes('Postponed') || statusStr.includes('Cancelled')) {
+  } else if (statusStr.includes('postponed') || statusStr.includes('cancelled')) {
     status = 'postponed';
+  } else if (hasScore) {
+    // Certaines réponses n'ont pas strStatus fiable : la présence du score indique terminé/en cours.
+    status = startTime.getTime() < Date.now() ? 'finished' : 'scheduled';
   }
   
   return {
-    id: event.idEvent,
-    externalId: event.idEvent,
+    id: String(event.idEvent || ''),
+    externalId: String(event.idEvent || ''),
     teamAName: event.strHomeTeam || '',
-    teamALogo: event.strHomeTeamBadge || event.strThumb || '',
+    teamALogo: event.strHomeTeamBadge || '',
     teamBName: event.strAwayTeam || '',
     teamBLogo: event.strAwayTeamBadge || '',
-    competition: leagueName,
+    competition: event.strLeague || leagueName,
     startTime,
     status,
-    scoreA: parseInt(event.intHomeScore || '0'),
-    scoreB: parseInt(event.intAwayScore || '0'),
+    scoreA: Number.parseInt(String(event.intHomeScore ?? '0'), 10) || 0,
+    scoreB: Number.parseInt(String(event.intAwayScore ?? '0'), 10) || 0,
     matchMinute: undefined,
-    predictionsEnabled: true,
+    predictionsEnabled: status === 'scheduled',
     rewardAmount: 100,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -282,12 +341,17 @@ export async function syncMatchesToFirestore(): Promise<{ created: number; updat
 export async function getMatchesFromFirestore(): Promise<Match[]> {
   try {
     const matchesRef = collection(db, 'matches');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const windowStart = new Date();
+    windowStart.setDate(windowStart.getDate() - 1);
+    windowStart.setHours(0, 0, 0, 0);
+    const windowEnd = new Date();
+    windowEnd.setDate(windowEnd.getDate() + 10);
+    windowEnd.setHours(23, 59, 59, 999);
     
     const q = query(
       matchesRef,
-      where('start_time', '>=', Timestamp.fromDate(today)),
+      where('start_time', '>=', Timestamp.fromDate(windowStart)),
+      where('start_time', '<=', Timestamp.fromDate(windowEnd)),
       orderBy('start_time', 'asc')
     );
     
@@ -616,66 +680,4 @@ async function processMatchPredictions(matchId: string, match: Match): Promise<v
   } catch (error) {
     console.error('Erreur traitement pronostics:', error);
   }
-}
-
-/**
- * Données de test
- */
-function getTestMatches(): Match[] {
-  const now = new Date();
-  
-  return [
-    {
-      id: 'test_1',
-      externalId: 'test_1',
-      teamAName: 'Real Madrid',
-      teamALogo: 'https://www.thesportsdb.com/images/media/team/badge/vwpvry1467462651.png',
-      teamBName: 'Barcelona',
-      teamBLogo: 'https://www.thesportsdb.com/images/media/team/badge/txrwth1468770530.png',
-      competition: 'La Liga',
-      startTime: new Date(now.getTime() + 2 * 60 * 60 * 1000),
-      status: 'scheduled',
-      scoreA: 0,
-      scoreB: 0,
-      predictionsEnabled: true,
-      rewardAmount: 100,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'test_2',
-      externalId: 'test_2',
-      teamAName: 'Manchester United',
-      teamALogo: 'https://www.thesportsdb.com/images/media/team/badge/vwpvry1467462651.png',
-      teamBName: 'Liverpool',
-      teamBLogo: 'https://www.thesportsdb.com/images/media/team/badge/uvxuxy1448813372.png',
-      competition: 'Premier League',
-      startTime: new Date(now.getTime() - 30 * 60 * 1000),
-      status: 'live',
-      scoreA: 1,
-      scoreB: 2,
-      matchMinute: 75,
-      predictionsEnabled: false,
-      rewardAmount: 100,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'test_3',
-      externalId: 'test_3',
-      teamAName: 'Bayern Munich',
-      teamALogo: 'https://www.thesportsdb.com/images/media/team/badge/uxsxqv1448813372.png',
-      teamBName: 'Borussia Dortmund',
-      teamBLogo: 'https://www.thesportsdb.com/images/media/team/badge/xqwpup1420746025.png',
-      competition: 'Bundesliga',
-      startTime: new Date(now.getTime() + 4 * 60 * 60 * 1000),
-      status: 'scheduled',
-      scoreA: 0,
-      scoreB: 0,
-      predictionsEnabled: true,
-      rewardAmount: 100,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
 }

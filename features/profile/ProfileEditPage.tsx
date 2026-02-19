@@ -1,17 +1,19 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Camera, Check, Loader, X } from 'lucide-react';
 import { UserProfile, UserType } from '../../types';
 import Button from '../../components/Button';
 import { getFirebaseAuth, getFirestoreDb } from '../../services/firebase';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { uploadProfileImage } from '../../services/imageUploadService';
 import { SPORTS_POSITIONS, MAJOR_CITIES } from '../../utils/sportsData';
 import { getPhoneCountries } from '../../utils/phoneCountries';
+import { getCitiesByCountry } from '../../services/cityService';
 
 const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const navigate = useNavigate();
+  const isAthleteAccount = user.type === UserType.ATHLETE;
   const [name, setName] = useState(user.displayName || '');
   const [country, setCountry] = useState(user.country || '');
   const [city, setCity] = useState('');
@@ -31,8 +33,9 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const [success, setSuccess] = useState(false);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
-  const [showCityDropdown, setShowCityDropdown] = useState(false);
   const [citySearch, setCitySearch] = useState('');
+  const [cityOptions, setCityOptions] = useState<string[]>([]);
+  const [loadingCities, setLoadingCities] = useState(false);
   const [showPositionDropdown, setShowPositionDropdown] = useState(false);
   const [positionSearch, setPositionSearch] = useState('');
 
@@ -40,8 +43,7 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const phoneCountries = getPhoneCountries();
 
   // Get available cities for selected country
-  const availableCities = country ? (MAJOR_CITIES[country] || []) : [];
-  const filteredCities = availableCities.filter(c => 
+  const filteredCities = cityOptions.filter(c => 
     c.toLowerCase().includes(citySearch.toLowerCase())
   );
 
@@ -55,6 +57,27 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const filteredCountries = phoneCountries.filter(c =>
     c.name.toLowerCase().includes(countrySearch.toLowerCase())
   );
+
+  useEffect(() => {
+    let active = true;
+    const loadCities = async () => {
+      if (!country) {
+        setCityOptions([]);
+        return;
+      }
+      setLoadingCities(true);
+      const cities = await getCitiesByCountry(country, MAJOR_CITIES[country] || []);
+      if (active) {
+        setCityOptions(cities);
+      }
+      setLoadingCities(false);
+    };
+
+    loadCities();
+    return () => {
+      active = false;
+    };
+  }, [country]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -129,23 +152,27 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
         displayName: name.trim(),
         country: country || null,
         city: city || null,
-        sport: sport || null,
-        position: position || null,
-        height: height ? parseInt(height) : null,
-        weight: weight ? parseInt(weight) : null,
         photoUrl: finalAvatarUrl || null,
       };
 
-      // Update stats
-      if (matchesPlayed || goals || assists) {
-        updateData.stats = {
-          matchesPlayed: matchesPlayed ? parseInt(matchesPlayed) : 0,
-          goals: goals ? parseInt(goals) : 0,
-          assists: assists ? parseInt(assists) : 0,
-        };
+      // Les champs sportifs sont réservés aux comptes athlètes
+      if (isAthleteAccount) {
+        updateData.sport = sport || null;
+        updateData.position = position || null;
+        updateData.height = height ? parseInt(height) : null;
+        updateData.weight = weight ? parseInt(weight) : null;
+
+        if (matchesPlayed || goals || assists) {
+          updateData.stats = {
+            matchesPlayed: matchesPlayed ? parseInt(matchesPlayed) : 0,
+            goals: goals ? parseInt(goals) : 0,
+            assists: assists ? parseInt(assists) : 0,
+          };
+        }
       }
 
-      await updateDoc(userRef, updateData);
+      // Utiliser setDoc + merge pour créer le document s'il n'existe pas encore.
+      await setDoc(userRef, updateData, { merge: true });
       
       setSuccess(true);
       
@@ -275,170 +302,159 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
         </div>
 
         {/* City Dropdown */}
-        {country && availableCities.length > 0 && (
-          <div className="space-y-2 relative">
+        {country && (
+          <div className="space-y-2">
             <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Ville</label>
-            <button
-              onClick={() => setShowCityDropdown(!showCityDropdown)}
-              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white text-left flex items-center justify-between focus:outline-none focus:border-[#19DB8A]"
-            >
-              <span>{city || 'Sélectionner une ville'}</span>
-              <svg className={`w-5 h-5 transition-transform ${showCityDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-              </svg>
-            </button>
-            
-            {showCityDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-[#0A0A0A] border border-white/5 rounded-2xl z-50 shadow-xl">
-                <input
-                  type="text"
-                  placeholder="Rechercher une ville..."
-                  value={citySearch}
-                  onChange={(e) => setCitySearch(e.target.value)}
-                  className="w-full bg-[#050505] border-b border-white/5 rounded-t-2xl p-3 text-white placeholder-white/20 focus:outline-none"
-                />
-                <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                  {filteredCities.map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => {
-                        setCity(c);
-                        setShowCityDropdown(false);
-                        setCitySearch('');
-                      }}
-                      className="w-full text-left px-4 py-3 text-white hover:bg-white/5 border-b border-white/5 last:border-b-0"
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <input
+              type="text"
+              list="city-options"
+              value={city}
+              onChange={(e) => {
+                setCity(e.target.value);
+                setCitySearch(e.target.value);
+              }}
+              placeholder={loadingCities ? 'Chargement des villes...' : 'Sélectionner ou saisir une ville'}
+              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A]"
+            />
+            <datalist id="city-options">
+              {filteredCities.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            {!loadingCities && filteredCities.length === 0 && (
+              <p className="text-xs text-white/40">
+                Aucune ville trouvée automatiquement, vous pouvez saisir la ville manuellement.
+              </p>
             )}
           </div>
         )}
 
-        {/* Sport */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Sport Principal</label>
-          <select 
-            value={sport}
-            onChange={(e) => {
-              setSport(e.target.value);
-              setPosition('');
-              setPositionSearch('');
-            }}
-            className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white appearance-none focus:outline-none focus:border-[#19DB8A]"
-          >
-            <option value="">Sélectionner un sport</option>
-            {Object.keys(SPORTS_POSITIONS).map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
+        {isAthleteAccount && (
+          <>
+            {/* Sport */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Sport Principal</label>
+              <select 
+                value={sport}
+                onChange={(e) => {
+                  setSport(e.target.value);
+                  setPosition('');
+                  setPositionSearch('');
+                }}
+                className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white appearance-none focus:outline-none focus:border-[#19DB8A]"
+              >
+                <option value="">Sélectionner un sport</option>
+                {Object.keys(SPORTS_POSITIONS).map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
 
-        {/* Position Dropdown */}
-        {sport && availablePositions.length > 0 && (
-          <div className="space-y-2 relative">
-            <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Poste / Spécialité</label>
-            <button
-              onClick={() => setShowPositionDropdown(!showPositionDropdown)}
-              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white text-left flex items-center justify-between focus:outline-none focus:border-[#19DB8A]"
-            >
-              <span>{position || 'Sélectionner un poste'}</span>
-              <svg className={`w-5 h-5 transition-transform ${showPositionDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-              </svg>
-            </button>
-            
-            {showPositionDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-[#0A0A0A] border border-white/5 rounded-2xl z-50 shadow-xl">
-                <input
-                  type="text"
-                  placeholder="Rechercher un poste..."
-                  value={positionSearch}
-                  onChange={(e) => setPositionSearch(e.target.value)}
-                  className="w-full bg-[#050505] border-b border-white/5 rounded-t-2xl p-3 text-white placeholder-white/20 focus:outline-none"
-                />
-                <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                  {filteredPositions.map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => {
-                        setPosition(p);
-                        setShowPositionDropdown(false);
-                        setPositionSearch('');
-                      }}
-                      className="w-full text-left px-4 py-3 text-white hover:bg-white/5 border-b border-white/5 last:border-b-0"
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
+            {/* Position Dropdown */}
+            {sport && availablePositions.length > 0 && (
+              <div className="space-y-2 relative">
+                <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Poste / Spécialité</label>
+                <button
+                  onClick={() => setShowPositionDropdown(!showPositionDropdown)}
+                  className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white text-left flex items-center justify-between focus:outline-none focus:border-[#19DB8A]"
+                >
+                  <span>{position || 'Sélectionner un poste'}</span>
+                  <svg className={`w-5 h-5 transition-transform ${showPositionDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                </button>
+                
+                {showPositionDropdown && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-[#0A0A0A] border border-white/5 rounded-2xl z-50 shadow-xl">
+                    <input
+                      type="text"
+                      placeholder="Rechercher un poste..."
+                      value={positionSearch}
+                      onChange={(e) => setPositionSearch(e.target.value)}
+                      className="w-full bg-[#050505] border-b border-white/5 rounded-t-2xl p-3 text-white placeholder-white/20 focus:outline-none"
+                    />
+                    <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                      {filteredPositions.map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => {
+                            setPosition(p);
+                            setShowPositionDropdown(false);
+                            setPositionSearch('');
+                          }}
+                          className="w-full text-left px-4 py-3 text-white hover:bg-white/5 border-b border-white/5 last:border-b-0"
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-          </div>
+
+            {/* Physical Stats */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Taille (cm)</label>
+                <input 
+                  type="number" 
+                  value={height}
+                  onChange={(e) => setHeight(e.target.value)}
+                  placeholder="Ex: 180"
+                  className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A]"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Poids (kg)</label>
+                <input 
+                  type="number" 
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  placeholder="Ex: 75"
+                  className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A]"
+                />
+              </div>
+            </div>
+
+            {/* Performance Stats */}
+            <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-4">
+              <h3 className="text-sm font-bold text-white/60 uppercase tracking-widest mb-4">Statistiques de Performance</h3>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Matchs</label>
+                  <input 
+                    type="number" 
+                    value={matchesPlayed}
+                    onChange={(e) => setMatchesPlayed(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-[#050505] border border-white/5 rounded-xl p-3 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A] text-center"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Buts</label>
+                  <input 
+                    type="number" 
+                    value={goals}
+                    onChange={(e) => setGoals(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-[#050505] border border-white/5 rounded-xl p-3 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A] text-center"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Passes</label>
+                  <input 
+                    type="number" 
+                    value={assists}
+                    onChange={(e) => setAssists(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-[#050505] border border-white/5 rounded-xl p-3 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A] text-center"
+                  />
+                </div>
+              </div>
+            </div>
+          </>
         )}
-
-        {/* Physical Stats */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Taille (cm)</label>
-            <input 
-              type="number" 
-              value={height}
-              onChange={(e) => setHeight(e.target.value)}
-              placeholder="Ex: 180"
-              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A]"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Poids (kg)</label>
-            <input 
-              type="number" 
-              value={weight}
-              onChange={(e) => setWeight(e.target.value)}
-              placeholder="Ex: 75"
-              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A]"
-            />
-          </div>
-        </div>
-
-        {/* Performance Stats */}
-        <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-4">
-          <h3 className="text-sm font-bold text-white/60 uppercase tracking-widest mb-4">Statistiques de Performance</h3>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Matchs</label>
-              <input 
-                type="number" 
-                value={matchesPlayed}
-                onChange={(e) => setMatchesPlayed(e.target.value)}
-                placeholder="0"
-                className="w-full bg-[#050505] border border-white/5 rounded-xl p-3 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A] text-center"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Buts</label>
-              <input 
-                type="number" 
-                value={goals}
-                onChange={(e) => setGoals(e.target.value)}
-                placeholder="0"
-                className="w-full bg-[#050505] border border-white/5 rounded-xl p-3 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A] text-center"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Passes</label>
-              <input 
-                type="number" 
-                value={assists}
-                onChange={(e) => setAssists(e.target.value)}
-                placeholder="0"
-                className="w-full bg-[#050505] border border-white/5 rounded-xl p-3 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A] text-center"
-              />
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Save Buttons */}

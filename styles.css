@@ -6,17 +6,53 @@
   --accent-orange: #FF8A3C;
 }
 
+/* Theme tokens */
+:root,
+[data-theme='dark'] {
+  --app-bg: #010101;
+  --app-surface: #0a0a0a;
+  --app-text: #ffffff;
+  --app-text-muted: rgba(255, 255, 255, 0.6);
+}
+
+[data-theme='light'] {
+  --app-bg: #f4f7fb;
+  --app-surface: #ffffff;
+  --app-text: #0f172a;
+  --app-text-muted: rgba(15, 23, 42, 0.65);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
 body {
   font-family: 'Inter', sans-serif;
-  background-color: #010101;
-  color: #ffffff;
+  background-color: var(--app-bg);
+  color: var(--app-text);
   margin: 0;
   padding: 0;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  height: 100vh;
-  width: 100vw;
+}
+
+/* Make light theme effectively visible on existing dark utility classes */
+[data-theme='light'] [class*="bg-[#050505]"],
+[data-theme='light'] [class*="bg-[#0A0A0A]"],
+[data-theme='light'] [class*="bg-black"] {
+  background-color: var(--app-surface) !important;
+}
+
+[data-theme='light'] [class*="text-white"] {
+  color: var(--app-text) !important;
+}
+
+[data-theme='light'] [class*="border-white"] {
+  border-color: rgba(15, 23, 42, 0.12) !important;
 }
 
 .font-readex {
@@ -30,7 +66,6 @@ body {
 .custom-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
-  height: 100%;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scroll-behavior: smooth;

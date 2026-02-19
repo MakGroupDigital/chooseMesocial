@@ -135,7 +135,7 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] p-6 flex flex-col">
+    <div className="min-h-full bg-[#050505] p-6 pb-10 flex flex-col">
       <button onClick={() => navigate(-1)} className="mt-8 mb-6 text-white/50 hover:text-white">
         <ChevronLeft size={32} />
       </button>
@@ -145,7 +145,7 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
         <p className="text-white/40 mt-1">Rejoignez la communauté Choose-Me</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex-1 space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
           <label className="text-sm font-medium text-white/50 ml-1 uppercase text-[10px] tracking-widest">Nom Complet</label>
           <div className="relative">
