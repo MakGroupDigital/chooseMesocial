@@ -17,9 +17,14 @@ import MyPredictionsPage from './features/live_match/MyPredictionsPage';
 import WalletPage from './features/wallet/WalletPage';
 import ProfileViewPage from './features/profile/ProfileViewPage';
 import ProfileEditPage from './features/profile/ProfileEditPage';
+import AthletePublicProfilePage from './features/profile/AthletePublicProfilePage';
+import SettingsPage from './features/profile/SettingsPage';
+import BecomeAthletePage from './features/profile/BecomeAthletePage';
 import ExplorerPage from './features/explorer/ExplorerPage';
 import ReportageDetailPage from './features/explorer/ReportageDetailPage';
 import CreateContentPage from './features/content/CreateContentPage';
+import VideoDescriptionPage from './features/content/VideoDescriptionPage';
+import PerformanceRecordingPage from './features/content/PerformanceRecordingPage';
 import SharedVideoPage from './features/content/SharedVideoPage';
 import BottomNav from './components/BottomNav';
 import PermissionModal from './components/PermissionModal';
@@ -29,11 +34,12 @@ import { getFirebaseAuth, getFirestoreDb } from './services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { usePermissions } from './hooks/usePermissions';
+import { applyLanguage, applyTheme, loadAppSettings, SETTINGS_EVENT } from './services/appSettingsService';
 
 const DeviceMockup: React.FC<{ children: React.ReactNode, showNav: boolean, userType?: UserType }> = ({ children, showNav, userType }) => {
   return (
-    <div className="min-h-screen bg-[#050505] flex flex-col font-sans overflow-hidden">
-      <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-[#050505]">
+    <div className="h-[100dvh] bg-[#050505] flex flex-col font-sans overflow-hidden">
+      <div className={`flex-1 min-h-0 overflow-y-auto relative custom-scrollbar bg-[#050505] ${showNav ? 'pb-24' : ''}`}>
         {children}
       </div>
       {showNav && <BottomNav userType={userType || UserType.ATHLETE} />}
@@ -48,6 +54,28 @@ const App: React.FC = () => {
   const { isModalOpen, currentPermission, handleAllow, handleDeny } = usePermissions();
 
   useEffect(() => {
+    const currentSettings = loadAppSettings();
+    applyTheme(currentSettings.theme);
+    applyLanguage(currentSettings.language);
+
+    const handleSettingsChanged = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const next = customEvent.detail || loadAppSettings();
+      applyTheme(next.theme);
+      applyLanguage(next.language);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key) {
+        const next = loadAppSettings();
+        applyTheme(next.theme);
+        applyLanguage(next.language);
+      }
+    };
+
+    window.addEventListener(SETTINGS_EVENT, handleSettingsChanged as EventListener);
+    window.addEventListener('storage', handleStorage);
+
     const auth = getFirebaseAuth();
     const db = getFirestoreDb();
 
@@ -101,7 +129,11 @@ const App: React.FC = () => {
       }
     });
 
-    return () => unsub();
+    return () => {
+      window.removeEventListener(SETTINGS_EVENT, handleSettingsChanged as EventListener);
+      window.removeEventListener('storage', handleStorage);
+      unsub();
+    };
   }, []);
 
   const handleSelectType = (type: UserType) => {
@@ -115,7 +147,7 @@ const App: React.FC = () => {
 
   if (loading) return <SplashPage />;
 
-  const hideNavOn = ['/onboarding', '/login', '/onboarding/type', '/onboarding/register', '/splash', '/create-content'];
+  const hideNavOn = ['/onboarding', '/login', '/onboarding/type', '/onboarding/register', '/splash', '/video-description', '/record-performance', '/settings', '/settings/become-athlete'];
   const showNav = !hideNavOn.includes(location.pathname) && location.pathname !== '/';
 
   return (
@@ -145,12 +177,17 @@ const App: React.FC = () => {
         <Route path="/explorer" element={<ExplorerPage userType={user?.type || UserType.ATHLETE} />} />
         <Route path="/explorer/reportage/:id" element={<ReportageDetailPage />} />
         <Route path="/create-content" element={<CreateContentPage userType={user?.type || UserType.ATHLETE} />} />
+        <Route path="/video-description" element={<VideoDescriptionPage />} />
+        <Route path="/record-performance" element={<PerformanceRecordingPage userType={user?.type || UserType.ATHLETE} />} />
         <Route path="/live-match" element={<LiveMatchesPage />} />
         <Route path="/live-match/:id" element={<MatchDetailPage />} />
         <Route path="/my-predictions" element={<MyPredictionsPage />} />
         <Route path="/wallet" element={<WalletPage />} />
         <Route path="/profile" element={<ProfileViewPage user={user || MOCK_USER} />} />
         <Route path="/profile/edit" element={<ProfileEditPage user={user || MOCK_USER} />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/become-athlete" element={<BecomeAthletePage />} />
+        <Route path="/athlete/:athleteId" element={<AthletePublicProfilePage />} />
         <Route path="/video/:videoId" element={<SharedVideoPage />} />
         
         <Route path="*" element={<Navigate to="/home" replace />} />

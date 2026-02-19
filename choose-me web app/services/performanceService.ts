@@ -1,6 +1,6 @@
 import { getFirebaseApp } from './firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getFirestore, collection, addDoc, serverTimestamp, getDocs, query, orderBy, onSnapshot, doc, updateDoc, increment } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, serverTimestamp, getDocs, onSnapshot, doc, updateDoc, increment } from 'firebase/firestore';
 
 export interface PerformanceVideo {
   id?: string;
@@ -89,16 +89,7 @@ export async function getUserPerformanceVideos(userId: string): Promise<Performa
   try {
     const db = getFirestore(getFirebaseApp());
     const performanceRef = collection(db, 'users', userId, 'performances');
-    
-    // Essayer d'abord avec orderBy, sinon sans
-    let snap;
-    try {
-      const q = query(performanceRef, orderBy('createdAt', 'desc'));
-      snap = await getDocs(q);
-    } catch (orderByError) {
-      console.warn('Erreur avec orderBy, récupération sans tri:', orderByError);
-      snap = await getDocs(performanceRef);
-    }
+    const snap = await getDocs(performanceRef);
 
     const videos: PerformanceVideo[] = [];
     snap.forEach((doc) => {
@@ -146,12 +137,9 @@ export function listenToPerformanceVideos(
   try {
     const db = getFirestore(getFirebaseApp());
     const performanceRef = collection(db, 'users', userId, 'performances');
-    
-    // Essayer avec orderBy d'abord
-    let unsubscribe: () => void;
-    try {
-      const q = query(performanceRef, orderBy('createdAt', 'desc'));
-      unsubscribe = onSnapshot(q, (snap) => {
+    const unsubscribe = onSnapshot(
+      performanceRef,
+      (snap) => {
         const videos: PerformanceVideo[] = [];
         snap.forEach((doc) => {
           const data = doc.data() as any;
@@ -172,44 +160,30 @@ export function listenToPerformanceVideos(
             format: data.format || 'webm'
           });
         });
-        console.log(`Vidéos en temps réel pour ${userId}:`, videos.length);
-        callback(videos);
-      });
-    } catch (orderByError) {
-      console.warn('Erreur avec orderBy, écoute sans tri:', orderByError);
-      unsubscribe = onSnapshot(performanceRef, (snap) => {
-        const videos: PerformanceVideo[] = [];
-        snap.forEach((doc) => {
-          const data = doc.data() as any;
-          videos.push({
-            id: doc.id,
-            userId: data.userId,
-            userName: data.userName,
-            userAvatar: data.userAvatar,
-            videoUrl: data.videoUrl,
-            thumbnailUrl: data.thumbnailUrl,
-            caption: data.caption,
-            title: data.title,
-            createdAt: data.createdAt,
-            likes: data.likes || 0,
-            comments: data.comments || 0,
-            shares: data.shares || 0,
-            processed: data.processed || false,
-            format: data.format || 'webm'
-          });
-        });
-        // Trier manuellement
+
+        // Trier côté client pour éviter toute dépendance à un index Firestore.
         videos.sort((a, b) => {
           const timeA = a.createdAt?.toMillis?.() || 0;
           const timeB = b.createdAt?.toMillis?.() || 0;
           return timeB - timeA;
         });
+
         console.log(`Vidéos en temps réel pour ${userId}:`, videos.length);
         callback(videos);
-      });
-    }
+      },
+      (error) => {
+        console.error('Erreur écoute vidéos de performance:', error);
+        callback([]);
+      }
+    );
 
-    return unsubscribe;
+    return () => {
+      try {
+        unsubscribe();
+      } catch (e) {
+        console.warn('Erreur unsubscribe écoute vidéos:', e);
+      }
+    };
   } catch (e) {
     console.error('Erreur lors de l\'écoute des vidéos de performance:', e);
     return () => {};

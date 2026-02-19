@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Bell, Heart, UserPlus, UserCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { UserType, FeedPost, PostComment } from '../../types';
 import { fetchVideoFeed } from '../../services/feedService';
 import { fetchComments, addComment, likeComment } from '../../services/commentService';
@@ -11,8 +12,10 @@ import { IconLike, IconComment, IconShare, IconVolume, IconVolumeMuted } from '.
 import { useAuth } from '../../services/firebase';
 import { getFirestoreDb } from '../../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { loadAppSettings, SETTINGS_EVENT } from '../../services/appSettingsService';
 
 const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [followingUsers, setFollowingUsers] = useState<Set<string>>(new Set());
@@ -31,6 +34,8 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
   const [followingLoading, setFollowingLoading] = useState<Set<string>>(new Set());
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [recentlySeenVideos, setRecentlySeenVideos] = useState<Set<string>>(new Set());
+  const [autoplayEnabled, setAutoplayEnabled] = useState(true);
+  const [dataSaverEnabled, setDataSaverEnabled] = useState(false);
 
   const userId = currentUser?.uid || '';
 
@@ -131,6 +136,27 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
       setFeed(filteredVideos);
     }
   }, [activeTab, allVideos, followingUsers]);
+
+  // Charger les réglages applicatifs qui impactent le feed
+  useEffect(() => {
+    const applySettings = () => {
+      const appSettings = loadAppSettings();
+      setAutoplayEnabled(appSettings.autoplayVideos);
+      setDataSaverEnabled(appSettings.dataSaver);
+      if (appSettings.dataSaver) {
+        setIsMuted(true);
+      }
+    };
+
+    applySettings();
+    window.addEventListener(SETTINGS_EVENT, applySettings as EventListener);
+    window.addEventListener('storage', applySettings);
+
+    return () => {
+      window.removeEventListener(SETTINGS_EVENT, applySettings as EventListener);
+      window.removeEventListener('storage', applySettings);
+    };
+  }, []);
 
   const toggleLike = async (post: FeedPost) => {
     if (!userId) {
@@ -396,6 +422,11 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
     }
   };
 
+  const openAthleteProfile = (post: FeedPost) => {
+    if (!post.userId) return;
+    navigate(`/athlete/${post.userId}`);
+  };
+
   return (
     <div className="w-full h-screen flex flex-col bg-[#050505] overflow-hidden">
       {/* Dynamic Header */}
@@ -453,7 +484,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
             feed.forEach((_, index) => {
               const video = document.getElementById(`video-${index}`) as HTMLVideoElement;
               if (video) {
-                if (index === currentVideoIndex) {
+                if (index === currentVideoIndex && autoplayEnabled) {
                   video.play().catch(e => console.log('Autoplay prevented:', e));
                 } else {
                   video.pause();
@@ -516,11 +547,11 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
               id={`video-${index}`}
               src={post.url}
               className="w-full h-full object-cover"
-              autoPlay={index === 0}
+              autoPlay={autoplayEnabled && index === 0}
               muted={isMuted}
               loop
               playsInline
-              preload="metadata"
+              preload={dataSaverEnabled ? 'none' : 'metadata'}
               onPlay={() => {
                 // Mettre en pause toutes les autres vidéos
                 feed.forEach((_, i) => {
@@ -575,13 +606,16 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
               </button>
 
               <div className="flex flex-col items-center">
-                <div className="w-14 h-14 rounded-full border-2 border-white overflow-hidden shadow-lg">
+                <button
+                  onClick={() => openAthleteProfile(post)}
+                  className="w-14 h-14 rounded-full border-2 border-white overflow-hidden shadow-lg"
+                >
                   <img 
                     src={post.userAvatar || '/assets/images/app_launcher_icon.png'} 
                     alt={post.userName}
                     className="w-full h-full object-cover" 
                   />
-                </div>
+                </button>
                 <div className="bg-[#19DB8A] rounded-full p-0.5 -mt-2.5 relative z-10 border-2 border-black">
                   <PlusCircle size={12} className="text-white" />
                 </div>
@@ -626,12 +660,15 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
 
             {/* Post Info */}
             <div className="absolute left-4 right-20 bottom-32 z-20">
-              <h3 className="text-white font-bold text-sm mb-1 flex items-center gap-2 line-clamp-1">
+              <button
+                onClick={() => openAthleteProfile(post)}
+                className="text-white font-bold text-sm mb-1 flex items-center gap-2 line-clamp-1"
+              >
                 @{post.userName}
                 <span className="bg-[#208050] text-[8px] px-1.5 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0">
                   {getSportFromPost(post)}
                 </span>
-              </h3>
+              </button>
               <p className="text-white/90 text-xs leading-tight line-clamp-2 mb-2">
                 {post.caption}
               </p>

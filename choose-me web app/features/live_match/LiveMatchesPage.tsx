@@ -46,10 +46,9 @@ const LiveMatchesPage: React.FC = () => {
         try {
           const apiMatches = await fetchTodayMatches();
           setMatches(apiMatches);
-          setIsFromCache(true);
+          setIsFromCache(false);
         } catch (apiError) {
           console.error('Erreur API:', apiError);
-          // Utiliser les données de test en dernier recours
           setMatches([]);
         }
       } else {
