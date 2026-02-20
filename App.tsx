@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import SplashPage from './features/onboarding/SplashPage';
 import ModernOnboardingPage from './features/onboarding/ModernOnboardingPage';
 import OnboardingChooseTypePage from './features/onboarding/OnboardingChooseTypePage';
@@ -15,6 +15,8 @@ import LiveMatchesPage from './features/live_match/LiveMatchesPage';
 import MatchDetailPage from './features/live_match/MatchDetailPage';
 import MyPredictionsPage from './features/live_match/MyPredictionsPage';
 import WalletPage from './features/wallet/WalletPage';
+import MessagesPage from './features/messages/MessagesPage';
+import NotificationsPage from './features/notifications/NotificationsPage';
 import ProfileViewPage from './features/profile/ProfileViewPage';
 import ProfileEditPage from './features/profile/ProfileEditPage';
 import AthletePublicProfilePage from './features/profile/AthletePublicProfilePage';
@@ -35,6 +37,9 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { usePermissions } from './hooks/usePermissions';
 import { applyLanguage, applyTheme, loadAppSettings, SETTINGS_EVENT } from './services/appSettingsService';
+import { ensureBrowserNotificationPermission, listenUserNotifications, notifyBrowser } from './services/notificationService';
+import { ensureUserProfile, getPendingGoogleRedirectUser } from './services/googleAuthService';
+import { warmVideoFeedCache } from './services/feedService';
 
 const DeviceMockup: React.FC<{ children: React.ReactNode, showNav: boolean, userType?: UserType }> = ({ children, showNav, userType }) => {
   return (
@@ -49,9 +54,69 @@ const DeviceMockup: React.FC<{ children: React.ReactNode, showNav: boolean, user
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [selectedOnboardingType, setSelectedOnboardingType] = useState<UserType | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const location = useLocation();
+  const navigate = useNavigate();
   const { isModalOpen, currentPermission, handleAllow, handleDeny } = usePermissions();
+
+  useEffect(() => {
+    // Précharge le feed pendant le splash pour affichage instantané à l'ouverture du Home.
+    void warmVideoFeedCache().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const waitForAuthenticatedUser = async () => {
+      const auth = getFirebaseAuth();
+      if (auth.currentUser) return auth.currentUser;
+
+      return await new Promise<any>((resolve) => {
+        const timeout = window.setTimeout(() => {
+          unsub();
+          resolve(null);
+        }, 2500);
+
+        const unsub = onAuthStateChanged(auth, (user) => {
+          if (user) {
+            window.clearTimeout(timeout);
+            unsub();
+            resolve(user);
+          }
+        });
+      });
+    };
+
+    const handleGoogleRedirect = async () => {
+      try {
+        const auth = getFirebaseAuth();
+        const redirectUser = await getPendingGoogleRedirectUser(auth);
+        const fallbackUser = auth.currentUser || (await waitForAuthenticatedUser());
+        const resolvedUser = redirectUser || fallbackUser;
+
+        if (!resolvedUser) {
+          return;
+        }
+
+        const { isNewUser } = await ensureUserProfile(resolvedUser);
+        if (!isMounted) {
+          return;
+        }
+
+        navigate(isNewUser ? '/onboarding/type' : '/home', { replace: true });
+      } catch (error) {
+        console.error('❌ Erreur finalisation connexion Google:', error);
+      }
+    };
+
+    void handleGoogleRedirect();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [navigate]);
 
   useEffect(() => {
     const currentSettings = loadAppSettings();
@@ -87,29 +152,38 @@ const App: React.FC = () => {
       }
       try {
         // Utiliser onSnapshot pour écouter les changements en temps réel
-        const unsubscribeSnapshot = onSnapshot(doc(db, 'users', fbUser.uid), (snap) => {
-          const data = snap.data() as any | undefined;
+        const usersDocRef = doc(db, 'users', fbUser.uid);
+        const userDocRef = doc(db, 'user', fbUser.uid);
+
+        const mapProfile = (data: any | undefined): UserProfile => ({
+          uid: fbUser.uid,
+          email: fbUser.email || data?.email || '',
+          displayName: data?.displayName || data?.display_name || fbUser.displayName || fbUser.email || '',
+          type: (data?.type as UserType) || UserType.VISITOR,
+          country: data?.country || data?.pays || '',
+          city: data?.city || data?.ville || '',
+          avatarUrl: data?.avatarUrl || data?.photoUrl || data?.photo_url || data?.avatar_url || fbUser.photoURL || undefined,
+          sport: data?.sport || data?.sporttype || data?.sport_type || undefined,
+          position: data?.position || data?.poste || undefined,
+          height: data?.height || data?.taille || undefined,
+          weight: data?.weight || data?.poids || undefined,
+          stats: {
+            matchesPlayed: data?.stats?.matchesPlayed || data?.matchesPlayed || data?.matches_played || 0,
+            goals: data?.stats?.goals || data?.goals || data?.buts || 0,
+            assists: data?.stats?.assists || data?.assists || data?.passes || 0
+          }
+        });
+
+        const unsubscribeSnapshot = onSnapshot(usersDocRef, async (snap) => {
+          let data = snap.data() as any | undefined;
+          if (!data) {
+            const legacySnap = await getDoc(userDocRef);
+            data = legacySnap.data() as any | undefined;
+          }
           
           console.log('🔍 Données Firebase brutes:', data);
 
-          const profile: UserProfile = {
-            uid: fbUser.uid,
-            email: fbUser.email || data?.email || '',
-            displayName: data?.displayName || data?.display_name || fbUser.displayName || fbUser.email || '',
-            type: (data?.type as UserType) || UserType.VISITOR,
-            country: data?.country || data?.pays || '',
-            city: data?.city || data?.ville || '',
-            avatarUrl: data?.avatarUrl || data?.photoUrl || data?.photo_url || data?.avatar_url || fbUser.photoURL || undefined,
-            sport: data?.sport || data?.sporttype || data?.sport_type || undefined,
-            position: data?.position || data?.poste || undefined,
-            height: data?.height || data?.taille || undefined,
-            weight: data?.weight || data?.poids || undefined,
-            stats: {
-              matchesPlayed: data?.stats?.matchesPlayed || data?.matchesPlayed || data?.matches_played || 0,
-              goals: data?.stats?.goals || data?.goals || data?.buts || 0,
-              assists: data?.stats?.assists || data?.assists || data?.passes || 0
-            }
-          };
+          const profile: UserProfile = mapProfile(data);
           
           console.log('✅ Profil mappé:', profile);
           console.log('📸 Avatar URL:', profile.avatarUrl);
@@ -119,6 +193,9 @@ const App: React.FC = () => {
           
           setUser(profile);
           setLoading(false);
+
+          // Précharge aussi un cache feed "utilisateur" dès que le profil est connu.
+          void warmVideoFeedCache({ userId: fbUser.uid }).catch(() => {});
         });
 
         return () => unsubscribeSnapshot();
@@ -136,9 +213,27 @@ const App: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user?.uid) return;
+    seenNotificationIdsRef.current = new Set();
+
+    void ensureBrowserNotificationPermission();
+    const unsub = listenUserNotifications(user.uid, (items) => {
+      items.forEach((item) => {
+        if (seenNotificationIdsRef.current.has(item.id)) return;
+        seenNotificationIdsRef.current.add(item.id);
+        if (!item.read) {
+          notifyBrowser(item.title, item.body);
+        }
+      });
+    });
+
+    return () => unsub();
+  }, [user?.uid]);
+
   const handleSelectType = (type: UserType) => {
-    // utilisé temporairement pendant l'onboarding avant création du doc Firestore
-    setUser({ ...(user || MOCK_USER), type });
+    // utilisé temporairement pendant l'onboarding avant création du compte Firebase
+    setSelectedOnboardingType(type);
   };
 
   const handleLogin = () => {
@@ -148,7 +243,11 @@ const App: React.FC = () => {
   if (loading) return <SplashPage />;
 
   const hideNavOn = ['/onboarding', '/login', '/onboarding/type', '/onboarding/register', '/splash', '/video-description', '/record-performance', '/settings', '/settings/become-athlete'];
-  const showNav = !hideNavOn.includes(location.pathname) && location.pathname !== '/';
+  const hideNavByPrefix: string[] = [];
+  const showNav =
+    !hideNavOn.includes(location.pathname) &&
+    !hideNavByPrefix.some((prefix) => location.pathname.startsWith(prefix)) &&
+    location.pathname !== '/';
 
   return (
     <DeviceMockup showNav={showNav} userType={user?.type}>
@@ -165,7 +264,7 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={user ? <Navigate to="/home" replace /> : <Navigate to="/onboarding" replace />} />
         <Route path="/onboarding" element={user ? <Navigate to="/home" replace /> : <ModernOnboardingPage />} />
-        <Route path="/onboarding/register" element={<OnboardingCreateAccountPage selectedType={user?.type} />} />
+        <Route path="/onboarding/register" element={<OnboardingCreateAccountPage selectedType={selectedOnboardingType} />} />
         <Route path="/onboarding/type" element={<OnboardingChooseTypePage onSelect={handleSelectType} />} />
         <Route path="/login" element={user ? <Navigate to="/home" replace /> : <LoginPage onLogin={handleLogin} />} />
         
@@ -182,12 +281,15 @@ const App: React.FC = () => {
         <Route path="/live-match" element={<LiveMatchesPage />} />
         <Route path="/live-match/:id" element={<MatchDetailPage />} />
         <Route path="/my-predictions" element={<MyPredictionsPage />} />
+        <Route path="/messages" element={<MessagesPage />} />
+        <Route path="/messages/:conversationId" element={<MessagesPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/wallet" element={<WalletPage />} />
         <Route path="/profile" element={<ProfileViewPage user={user || MOCK_USER} />} />
         <Route path="/profile/edit" element={<ProfileEditPage user={user || MOCK_USER} />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/become-athlete" element={<BecomeAthletePage />} />
-        <Route path="/athlete/:athleteId" element={<AthletePublicProfilePage />} />
+        <Route path="/athlete/:athleteId" element={<AthletePublicProfilePage viewerType={user?.type} />} />
         <Route path="/video/:videoId" element={<SharedVideoPage />} />
         
         <Route path="*" element={<Navigate to="/home" replace />} />

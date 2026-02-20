@@ -5,6 +5,80 @@ import { sortVideosByAlgorithm } from './feedAlgorithm';
 
 // Cache pour les infos utilisateur
 const userCache = new Map<string, { displayName: string; avatarUrl: string }>();
+const feedInMemoryCache = new Map<string, { data: FeedPost[]; updatedAt: number }>();
+const feedInFlightRequests = new Map<string, Promise<FeedPost[]>>();
+const FEED_CACHE_TTL_MS = 1000 * 60 * 3;
+const FEED_SESSION_KEY_PREFIX = 'chooseme:feed:v2:';
+
+function normalizeFollowingUsers(followingUsers?: Set<string>): string[] {
+  if (!followingUsers || followingUsers.size === 0) return [];
+  return Array.from(followingUsers).sort();
+}
+
+function buildFeedCacheKey(options?: {
+  userId?: string;
+  followingUsers?: Set<string>;
+}): string {
+  const userId = options?.userId || 'guest';
+  const following = normalizeFollowingUsers(options?.followingUsers).join(',');
+  return `${userId}::${following}`;
+}
+
+function getSessionStorageKey(cacheKey: string): string {
+  return `${FEED_SESSION_KEY_PREFIX}${cacheKey}`;
+}
+
+function saveFeedToCache(cacheKey: string, data: FeedPost[]): void {
+  const payload = { data, updatedAt: Date.now() };
+  feedInMemoryCache.set(cacheKey, payload);
+
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(getSessionStorageKey(cacheKey), JSON.stringify(payload));
+    }
+  } catch {
+    // Ignore sessionStorage failures (private mode / quota).
+  }
+}
+
+function readFeedFromCache(cacheKey: string): { data: FeedPost[]; isFresh: boolean } | null {
+  const now = Date.now();
+  const inMemory = feedInMemoryCache.get(cacheKey);
+  if (inMemory) {
+    return { data: inMemory.data, isFresh: now - inMemory.updatedAt < FEED_CACHE_TTL_MS };
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const raw = window.sessionStorage.getItem(getSessionStorageKey(cacheKey));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { data?: FeedPost[]; updatedAt?: number };
+      if (!Array.isArray(parsed?.data) || typeof parsed?.updatedAt !== 'number') return null;
+      feedInMemoryCache.set(cacheKey, { data: parsed.data, updatedAt: parsed.updatedAt });
+      return { data: parsed.data, isFresh: now - parsed.updatedAt < FEED_CACHE_TTL_MS };
+    }
+  } catch {
+    // Ignore broken cache payload.
+  }
+
+  return null;
+}
+
+export function getCachedVideoFeed(options?: {
+  userId?: string;
+  followingUsers?: Set<string>;
+}): FeedPost[] {
+  const cacheKey = buildFeedCacheKey(options);
+  const cached = readFeedFromCache(cacheKey);
+  return cached?.data || [];
+}
+
+export function warmVideoFeedCache(options?: {
+  userId?: string;
+  followingUsers?: Set<string>;
+}): Promise<FeedPost[]> {
+  return fetchVideoFeed({ ...options, forceRefresh: false });
+}
 
 /**
  * Récupère les infos utilisateur avec cache
@@ -58,12 +132,26 @@ export async function fetchVideoFeed(options?: {
   userId?: string;
   followingUsers?: Set<string>;
   recentlySeenVideos?: Set<string>;
+  forceRefresh?: boolean;
 }): Promise<FeedPost[]> {
+  const cacheKey = buildFeedCacheKey(options);
+  const cached = readFeedFromCache(cacheKey);
+
+  if (!options?.forceRefresh && cached?.isFresh && cached.data.length > 0) {
+    return cached.data;
+  }
+
+  const existingRequest = feedInFlightRequests.get(cacheKey);
+  if (existingRequest) {
+    return existingRequest;
+  }
+
   const db = getFirestoreDb();
 
-  try {
-    const allVideos: FeedPost[] = [];
-    const userInfoPromises = new Map<string, Promise<{ displayName: string; avatarUrl: string }>>();
+  const requestPromise = (async () => {
+    try {
+      const allVideos: FeedPost[] = [];
+      const userInfoPromises = new Map<string, Promise<{ displayName: string; avatarUrl: string }>>();
 
     // ========== SOURCE 1 : PERFORMANCES ==========
     console.log('📹 Chargement des vidéos depuis performances...');
@@ -233,10 +321,16 @@ export async function fetchVideoFeed(options?: {
     
     // Appliquer l'algorithme de tri intelligent
     const sortedVideos = sortVideosByAlgorithm(allVideos, options);
-    
+    saveFeedToCache(cacheKey, sortedVideos);
     return sortedVideos;
-  } catch (e) {
-    console.error('❌ Erreur chargement vidéos:', e);
-    return [];
-  }
+    } catch (e) {
+      console.error('❌ Erreur chargement vidéos:', e);
+      return cached?.data || [];
+    }
+  })().finally(() => {
+    feedInFlightRequests.delete(cacheKey);
+  });
+
+  feedInFlightRequests.set(cacheKey, requestPromise);
+  return requestPromise;
 }

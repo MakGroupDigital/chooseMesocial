@@ -20,7 +20,7 @@ import {
   getTransactionHistory,
   getWithdrawalHistory,
   requestWithdrawal,
-  pointsToCDF,
+  pointsToUSD,
   MOBILE_MONEY_OPERATORS,
   WalletData,
   WalletStats,
@@ -50,6 +50,12 @@ const WalletPage: React.FC = () => {
       loadWalletData();
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!authLoading && !currentUser) {
+      navigate('/login', { replace: true });
+    }
+  }, [authLoading, currentUser, navigate]);
 
   const loadWalletData = async () => {
     if (!currentUser) return;
@@ -86,7 +92,7 @@ const WalletPage: React.FC = () => {
     }
     
     if (points < 1000) {
-      setError('Minimum 1000 points (10000 CDF)');
+      setError('Minimum 1000 points (1.00 USD)');
       return;
     }
     
@@ -175,7 +181,7 @@ const WalletPage: React.FC = () => {
             Vous devez être connecté pour accéder à votre portefeuille
           </p>
           <button
-            onClick={() => navigate('/login')}
+            onClick={() => navigate('/login', { replace: true })}
             className="px-6 py-3 bg-[#208050] text-white rounded-xl hover:bg-[#208050]/80 transition-all"
           >
             Se connecter
@@ -194,7 +200,7 @@ const WalletPage: React.FC = () => {
   }
 
   const currentPoints = wallet?.points || 0;
-  const currentCDF = pointsToCDF(currentPoints);
+  const currentUSD = pointsToUSD(currentPoints);
   const canWithdraw = currentPoints >= 1000;
 
   return (
@@ -238,10 +244,10 @@ const WalletPage: React.FC = () => {
             <span className="text-[#19DB8A] font-bold text-lg">PTS</span>
           </div>
           
-          {/* Équivalent CDF */}
+          {/* Équivalent USD */}
           <div className="flex items-baseline gap-2 mb-4">
-            <span className="text-xl font-bold text-white/80">{currentCDF.toLocaleString()}</span>
-            <span className="text-white/60 font-bold text-sm">CDF</span>
+            <span className="text-xl font-bold text-white/80">${currentUSD.toFixed(2)}</span>
+            <span className="text-white/60 font-bold text-sm">USD</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/10">
@@ -301,7 +307,7 @@ const WalletPage: React.FC = () => {
                   <div className="flex items-center justify-between mb-2">
                     <div>
                       <span className="font-bold text-white">{withdrawal.amount.toLocaleString()} PTS</span>
-                      <span className="text-white/60 text-sm ml-2">({withdrawal.amountCDF.toLocaleString()} CDF)</span>
+                      <span className="text-white/60 text-sm ml-2">(${withdrawal.amountUSD.toFixed(2)} USD)</span>
                     </div>
                     {getWithdrawalStatusBadge(withdrawal.status)}
                   </div>
@@ -357,7 +363,7 @@ const WalletPage: React.FC = () => {
                       <span className="text-[10px] opacity-40">PTS</span>
                     </p>
                     <p className="text-white/40 text-[10px]">
-                      {pointsToCDF(tx.amount).toLocaleString()} CDF
+                      ${pointsToUSD(tx.amount).toFixed(2)} USD
                     </p>
                   </div>
                 </div>
@@ -404,7 +410,7 @@ const WalletPage: React.FC = () => {
                   </p>
                   {withdrawPoints && (
                     <p className="text-[#19DB8A] text-xs font-bold">
-                      ≈ {pointsToCDF(parseInt(withdrawPoints) || 0).toLocaleString()} CDF
+                      ≈ ${pointsToUSD(parseInt(withdrawPoints) || 0).toFixed(2)} USD
                     </p>
                   )}
                 </div>
@@ -449,7 +455,7 @@ const WalletPage: React.FC = () => {
               {/* Info */}
               <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3">
                 <p className="text-blue-400 text-xs">
-                  ℹ️ Les retraits sont traités sous 24-48h. Minimum: 1000 points (10000 CDF)
+                  ℹ️ Les retraits sont traités sous 24-48h. Minimum: 1000 points (1.00 USD)
                 </p>
               </div>
 

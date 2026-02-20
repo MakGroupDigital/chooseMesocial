@@ -1,5 +1,6 @@
 import { getFirestoreDb, getFirebaseAuth } from './firebase';
 import { doc, updateDoc, arrayUnion, arrayRemove, getDoc, increment } from 'firebase/firestore';
+import { createAppNotification, getUserIdentity } from './notificationService';
 
 /**
  * Like une publication
@@ -13,6 +14,20 @@ export async function likePost(postDocPath: string, userId: string): Promise<voi
     await updateDoc(postRef, {
       likes: arrayUnion(userId)
     });
+
+    const pathParts = postDocPath.split('/');
+    const ownerId = pathParts.length > 1 ? pathParts[1] : '';
+    if (ownerId && ownerId !== userId) {
+      const actor = await getUserIdentity(userId);
+      await createAppNotification({
+        type: 'like',
+        recipientId: ownerId,
+        actorId: userId,
+        title: 'Nouveau like',
+        body: `${actor.name} a aimé votre contenu.`,
+        data: { postDocPath }
+      });
+    }
     
     console.log('✅ Post liké:', postDocPath);
   } catch (error) {

@@ -1,32 +1,62 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, MapPin, Users, UserPlus, UserCheck, Activity, Trophy, Award } from 'lucide-react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ChevronLeft, MapPin, Users, UserPlus, UserCheck, Activity, Trophy, Award, MessageCircle } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import CustomVideoPlayer from '../../components/CustomVideoPlayer';
 import { getFirestoreDb, useAuth } from '../../services/firebase';
 import { UserProfile, UserType } from '../../types';
 import { getFollowers, getFollowing, followAthlete, isFollowing, unfollowAthlete } from '../../services/followService';
 import { getUserPerformanceVideos, PerformanceVideo } from '../../services/performanceService';
+import { getOrCreateConversation } from '../../services/chatService';
 
 type PublicProfileData = UserProfile & {
   rawSkills: string[];
 };
 
-const AthletePublicProfilePage: React.FC = () => {
+type AthletePageState = {
+  prefillProfile?: Partial<UserProfile>;
+  preloadedVideos?: PerformanceVideo[];
+};
+
+const AthletePublicProfilePage: React.FC<{ viewerType?: UserType }> = ({ viewerType }) => {
   const { athleteId } = useParams<{ athleteId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser } = useAuth();
+  const pageState = (location.state as AthletePageState | null) || null;
 
-  const [profile, setProfile] = useState<PublicProfileData | null>(null);
-  const [videos, setVideos] = useState<PerformanceVideo[]>([]);
+  const quickProfile = pageState?.prefillProfile
+    ? ({
+        uid: pageState.prefillProfile.uid || athleteId || '',
+        email: pageState.prefillProfile.email || '',
+        displayName: pageState.prefillProfile.displayName || 'Athlète',
+        type: (pageState.prefillProfile.type as UserType) || UserType.ATHLETE,
+        country: pageState.prefillProfile.country || '',
+        city: pageState.prefillProfile.city || '',
+        avatarUrl: pageState.prefillProfile.avatarUrl || '',
+        sport: pageState.prefillProfile.sport || '',
+        position: pageState.prefillProfile.position || '',
+        height: pageState.prefillProfile.height,
+        weight: pageState.prefillProfile.weight,
+        stats: pageState.prefillProfile.stats || { matchesPlayed: 0, goals: 0, assists: 0, points: 0 },
+        rawSkills: []
+      } as PublicProfileData)
+    : null;
+
+  const [profile, setProfile] = useState<PublicProfileData | null>(quickProfile);
+  const [videos, setVideos] = useState<PerformanceVideo[]>(pageState?.preloadedVideos || []);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [isFollowingAthlete, setIsFollowingAthlete] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!quickProfile);
   const [followLoading, setFollowLoading] = useState(false);
+  const [messageLoading, setMessageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isOwnProfile = Boolean(currentUser?.uid && athleteId && currentUser.uid === athleteId);
+  const canMessageAthlete =
+    !isOwnProfile &&
+    (viewerType === UserType.RECRUITER || viewerType === UserType.CLUB);
 
   const competencies = useMemo(() => {
     if (!profile) return [];
@@ -50,15 +80,19 @@ const AthletePublicProfilePage: React.FC = () => {
       }
 
       try {
-        setLoading(true);
+        if (!quickProfile) setLoading(true);
         setError(null);
         const db = getFirestoreDb();
-        const userRef = doc(db, 'users', athleteId);
-        const userSnap = await getDoc(userRef);
+        const usersRef = doc(db, 'users', athleteId);
+        const userRef = doc(db, 'user', athleteId);
+        const [usersSnap, userSnapLegacy] = await Promise.all([getDoc(usersRef), getDoc(userRef)]);
+        const userSnap = usersSnap.exists() ? usersSnap : userSnapLegacy;
 
         if (!userSnap.exists()) {
-          setError('Athlète introuvable');
-          setLoading(false);
+          if (!quickProfile) {
+            setError('Athlète introuvable');
+            setLoading(false);
+          }
           return;
         }
 
@@ -108,7 +142,9 @@ const AthletePublicProfilePage: React.FC = () => {
         }
       } catch (e) {
         console.error('Erreur chargement profil athlète:', e);
-        setError('Impossible de charger ce profil pour le moment');
+        if (!quickProfile) {
+          setError('Impossible de charger ce profil pour le moment');
+        }
       } finally {
         setLoading(false);
       }
@@ -120,22 +156,43 @@ const AthletePublicProfilePage: React.FC = () => {
   const handleFollowToggle = async () => {
     if (!currentUser?.uid || !athleteId || isOwnProfile) return;
 
+    const wasFollowing = isFollowingAthlete;
+    const previousFollowersCount = followersCount;
+    const nextFollowing = !wasFollowing;
+
+    // Réponse UI immédiate au clic (optimistic update)
+    setIsFollowingAthlete(nextFollowing);
+    setFollowersCount((prev) => Math.max(0, prev + (nextFollowing ? 1 : -1)));
+
     try {
       setFollowLoading(true);
 
-      if (isFollowingAthlete) {
+      if (wasFollowing) {
         await unfollowAthlete(currentUser.uid, athleteId);
-        setIsFollowingAthlete(false);
-        setFollowersCount((prev) => Math.max(0, prev - 1));
       } else {
         await followAthlete(currentUser.uid, athleteId);
-        setIsFollowingAthlete(true);
-        setFollowersCount((prev) => prev + 1);
       }
     } catch (e) {
       console.error('Erreur suivi athlète:', e);
+      // Rollback si échec backend
+      setIsFollowingAthlete(wasFollowing);
+      setFollowersCount(previousFollowersCount);
     } finally {
       setFollowLoading(false);
+    }
+  };
+
+  const handleMessageAthlete = async () => {
+    if (!currentUser?.uid || !athleteId) {
+      navigate('/login');
+      return;
+    }
+    try {
+      setMessageLoading(true);
+      const conversationId = await getOrCreateConversation(currentUser.uid, athleteId);
+      navigate(`/messages/${conversationId}`);
+    } finally {
+      setMessageLoading(false);
     }
   };
 
@@ -170,16 +227,28 @@ const AthletePublicProfilePage: React.FC = () => {
           </button>
 
           {!isOwnProfile && (
-            <button
-              onClick={handleFollowToggle}
-              disabled={followLoading}
-              className={`px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2 ${
-                isFollowingAthlete ? 'bg-white/15 text-white' : 'bg-[#19DB8A] text-black'
-              }`}
-            >
-              {isFollowingAthlete ? <UserCheck size={16} /> : <UserPlus size={16} />}
-              {isFollowingAthlete ? 'Suivi' : 'Suivre'}
-            </button>
+            <div className="flex items-center gap-2">
+              {canMessageAthlete && (
+                <button
+                  onClick={handleMessageAthlete}
+                  disabled={messageLoading}
+                  className="px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2 bg-[#FF8A3C] text-black"
+                >
+                  <MessageCircle size={16} />
+                  {messageLoading ? 'Ouverture...' : 'Écrire un message'}
+                </button>
+              )}
+              <button
+                onClick={handleFollowToggle}
+                disabled={followLoading}
+                className={`px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2 ${
+                  isFollowingAthlete ? 'bg-white/15 text-white' : 'bg-[#19DB8A] text-black'
+                }`}
+              >
+                {isFollowingAthlete ? <UserCheck size={16} /> : <UserPlus size={16} />}
+                {isFollowingAthlete ? 'Suivi' : 'Suivre'}
+              </button>
+            </div>
           )}
         </div>
       </div>

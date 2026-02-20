@@ -3,6 +3,7 @@ import {
   doc, 
   addDoc, 
   updateDoc, 
+  increment,
   query, 
   where, 
   getDocs, 
@@ -304,13 +305,15 @@ export async function syncMatchesToFirestore(): Promise<{ created: number; updat
           // Ne mettre à jour que si les données ont changé
           if (existingData.status !== match.status ||
               existingData.score_a !== match.scoreA ||
-              existingData.score_b !== match.scoreB) {
+              existingData.score_b !== match.scoreB ||
+              Number(existingData.reward_amount || 0) !== 100) {
             
             await updateDoc(existingDoc.ref, {
               status: match.status,
               score_a: match.scoreA,
               score_b: match.scoreB,
               match_minute: match.matchMinute || 0,
+              reward_amount: 100,
               updated_at: serverTimestamp(),
             });
             updated++;
@@ -373,7 +376,7 @@ export async function getMatchesFromFirestore(): Promise<Match[]> {
         scoreB: data.score_b,
         matchMinute: data.match_minute,
         predictionsEnabled: data.predictions_enabled,
-        rewardAmount: data.reward_amount,
+        rewardAmount: Number(data.reward_amount || 100),
         createdAt: data.created_at?.toDate() || new Date(),
         updatedAt: data.updated_at?.toDate() || new Date(),
       };
@@ -394,7 +397,26 @@ export async function submitPrediction(
   prediction: 'team_a' | 'draw' | 'team_b'
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // Vérifier si l'utilisateur a déjà fait un pronostic
+    // Règle produit: 1 seul pronostic par jour et par utilisateur.
+    const alreadyPredictedToday = await hasSubmittedPredictionToday(userId);
+    if (alreadyPredictedToday) {
+      return { success: false, error: 'Vous avez déjà fait votre pronostic aujourd’hui. Revenez demain.' };
+    }
+
+    // Vérifier si l'utilisateur a déjà fait un pronostic (clé stricte user_id + match_id)
+    const pronosticsRef = collection(db, 'pronostics');
+    const strictQuery = query(
+      pronosticsRef,
+      where('user_id', '==', userId),
+      where('match_id', '==', matchId),
+      limit(1)
+    );
+    const strictSnapshot = await getDocs(strictQuery);
+    if (!strictSnapshot.empty) {
+      return { success: false, error: 'Vous avez déjà fait un pronostic pour ce match' };
+    }
+
+    // Fallback legacy: anciens documents sans user_id/match_id
     const existingPrediction = await getUserPrediction(userId, matchId);
     if (existingPrediction) {
       return { success: false, error: 'Vous avez déjà fait un pronostic pour ce match' };
@@ -412,10 +434,11 @@ export async function submitPrediction(
     }
     
     // Créer le pronostic
-    const pronosticsRef = collection(db, 'pronostics');
     await addDoc(pronosticsRef, {
       user_ref: doc(db, 'users', userId),
       match_ref: doc(db, 'matches', matchId),
+      user_id: userId,
+      match_id: matchId,
       prediction,
       submitted_at: serverTimestamp(),
       status: 'pending',
@@ -430,21 +453,84 @@ export async function submitPrediction(
   }
 }
 
+async function hasSubmittedPredictionToday(userId: string): Promise<boolean> {
+  const pronosticsRef = collection(db, 'pronostics');
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  const d = today.getDate();
+  const dayStart = new Date(y, m, d, 0, 0, 0, 0).getTime();
+  const dayEnd = new Date(y, m, d, 23, 59, 59, 999).getTime();
+
+  const strictQ = query(pronosticsRef, where('user_id', '==', userId));
+  const strictSnap = await getDocs(strictQ);
+  for (const docSnap of strictSnap.docs) {
+    const submittedAt = docSnap.data()?.submitted_at;
+    const submittedMs = submittedAt?.toDate ? submittedAt.toDate().getTime() : null;
+    if (submittedMs && submittedMs >= dayStart && submittedMs <= dayEnd) {
+      return true;
+    }
+  }
+
+  // Fallback legacy docs
+  const legacyUsersQ = query(pronosticsRef, where('user_ref', '==', doc(db, 'users', userId)));
+  const legacyUsersSnap = await getDocs(legacyUsersQ);
+  for (const docSnap of legacyUsersSnap.docs) {
+    const submittedAt = docSnap.data()?.submitted_at;
+    const submittedMs = submittedAt?.toDate ? submittedAt.toDate().getTime() : null;
+    if (submittedMs && submittedMs >= dayStart && submittedMs <= dayEnd) {
+      return true;
+    }
+  }
+
+  const legacyUserQ = query(pronosticsRef, where('user_ref', '==', doc(db, 'user', userId)));
+  const legacyUserSnap = await getDocs(legacyUserQ);
+  for (const docSnap of legacyUserSnap.docs) {
+    const submittedAt = docSnap.data()?.submitted_at;
+    const submittedMs = submittedAt?.toDate ? submittedAt.toDate().getTime() : null;
+    if (submittedMs && submittedMs >= dayStart && submittedMs <= dayEnd) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Récupère le pronostic d'un utilisateur pour un match
  */
 export async function getUserPrediction(userId: string, matchId: string): Promise<Pronostic | null> {
   try {
     const pronosticsRef = collection(db, 'pronostics');
-    const q = query(
+    const strictQ = query(
       pronosticsRef,
-      where('user_ref', '==', doc(db, 'users', userId)),
-      where('match_ref', '==', doc(db, 'matches', matchId)),
+      where('user_id', '==', userId),
+      where('match_id', '==', matchId),
       limit(1)
     );
-    
-    const snapshot = await getDocs(q);
-    
+
+    let snapshot = await getDocs(strictQ);
+
+    if (snapshot.empty) {
+      const legacyQ = query(
+        pronosticsRef,
+        where('user_ref', '==', doc(db, 'users', userId)),
+        where('match_ref', '==', doc(db, 'matches', matchId)),
+        limit(1)
+      );
+      snapshot = await getDocs(legacyQ);
+    }
+
+    if (snapshot.empty) {
+      const legacyUserCollectionQ = query(
+        pronosticsRef,
+        where('user_ref', '==', doc(db, 'user', userId)),
+        where('match_ref', '==', doc(db, 'matches', matchId)),
+        limit(1)
+      );
+      snapshot = await getDocs(legacyUserCollectionQ);
+    }
+
     if (snapshot.empty) {
       return null;
     }
@@ -669,8 +755,7 @@ async function processMatchPredictions(matchId: string, match: Match): Promise<v
       
       if (isWinner) {
         winners++;
-        // Créditer le portefeuille (à implémenter)
-        // await creditUserWallet(data.user_ref.id, 100);
+        await creditUserWallet(data.user_id || data.user_ref?.id, matchId);
       } else {
         losers++;
       }
@@ -680,4 +765,41 @@ async function processMatchPredictions(matchId: string, match: Match): Promise<v
   } catch (error) {
     console.error('Erreur traitement pronostics:', error);
   }
+}
+
+async function creditUserWallet(userId: string, matchId: string): Promise<void> {
+  if (!userId) return;
+
+  const POINTS_PER_WIN = 100;
+  const userRef = doc(db, 'users', userId);
+  const walletsRef = collection(db, 'wallets');
+  const walletQuery = query(walletsRef, where('user_ref', '==', userRef), limit(1));
+  const walletSnapshot = await getDocs(walletQuery);
+
+  let walletRef: DocumentReference;
+  if (walletSnapshot.empty) {
+    walletRef = await addDoc(walletsRef, {
+      user_ref: userRef,
+      points: POINTS_PER_WIN,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp()
+    });
+  } else {
+    walletRef = walletSnapshot.docs[0].ref;
+    await updateDoc(walletRef, {
+      points: increment(POINTS_PER_WIN),
+      updated_at: serverTimestamp()
+    });
+  }
+
+  await addDoc(collection(db, 'transactions'), {
+    wallet_ref: walletRef,
+    user_ref: userRef,
+    match_ref: doc(db, 'matches', matchId),
+    type: 'credit',
+    amount: POINTS_PER_WIN,
+    reward_type: 'prediction_win',
+    description: 'Victoire pronostic (+100 points)',
+    created_at: serverTimestamp()
+  });
 }

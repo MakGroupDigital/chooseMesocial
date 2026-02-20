@@ -17,8 +17,8 @@ import { getFirestoreDb } from './firebase';
 const db = getFirestoreDb();
 
 // NOUVELLE LOGIQUE:
-// - 1 pronostic gagné = 10 points
-// - 1000 points = 10000 CDF
+// - 1 pronostic gagné = 100 points
+// - 1000 points = 1 USD
 // - Retrait minimum: 1000 points
 // - Mobile Money uniquement
 
@@ -55,7 +55,7 @@ export interface Withdrawal {
   id: string;
   userId: string;
   amount: number;  // En points
-  amountCDF: number;  // Montant en CDF (amount * 10)
+  amountUSD: number;  // Montant en USD
   method: 'mobile_money';
   operator: string;  // Orange Money, M-Pesa, etc.
   accountDetails: string;
@@ -81,20 +81,20 @@ export const MOBILE_MONEY_OPERATORS = [
 
 // Constantes
 const MIN_WITHDRAWAL_POINTS = 1000;  // Minimum 1000 points
-const POINTS_TO_CDF = 10;  // 1 point = 10 CDF
+const POINTS_PER_USD = 1000;  // 1000 points = 1 USD
 
 /**
- * Convertit les points en CDF
+ * Convertit les points en USD
  */
-export function pointsToCDF(points: number): number {
-  return points * POINTS_TO_CDF;
+export function pointsToUSD(points: number): number {
+  return points / POINTS_PER_USD;
 }
 
 /**
- * Convertit les CDF en points
+ * Convertit les USD en points
  */
-export function cdfToPoints(cdf: number): number {
-  return Math.floor(cdf / POINTS_TO_CDF);
+export function usdToPoints(usd: number): number {
+  return Math.floor(usd * POINTS_PER_USD);
 }
 
 /**
@@ -249,7 +249,7 @@ export async function getWithdrawalHistory(userId: string, limitCount = 10): Pro
         id: docData.id,
         userId,
         amount,
-        amountCDF: pointsToCDF(amount),
+        amountUSD: data.amount_usd ?? pointsToUSD(amount),
         method: 'mobile_money',
         operator: data.operator || '',
         accountDetails: data.account_details,
@@ -279,7 +279,7 @@ export async function requestWithdrawal(
     if (points < MIN_WITHDRAWAL_POINTS) {
       return { 
         success: false, 
-        error: `Minimum ${MIN_WITHDRAWAL_POINTS} points (${pointsToCDF(MIN_WITHDRAWAL_POINTS)} CDF)` 
+        error: `Minimum ${MIN_WITHDRAWAL_POINTS} points (${pointsToUSD(MIN_WITHDRAWAL_POINTS).toFixed(2)} USD)` 
       };
     }
     
@@ -310,7 +310,7 @@ export async function requestWithdrawal(
     await addDoc(withdrawalsRef, {
       user_ref: doc(db, 'users', userId),
       amount: points,
-      amount_cdf: pointsToCDF(points),
+      amount_usd: pointsToUSD(points),
       method: 'mobile_money',
       operator,
       account_details: phoneNumber,
