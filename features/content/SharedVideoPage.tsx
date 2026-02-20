@@ -76,9 +76,9 @@ const SharedVideoPage: React.FC = () => {
             videoUrl,
             thumbnailUrl: data.post_photo || '',
             caption: data.post_description || '',
-            likes: Array.isArray(data.likes) ? data.likes.length : 0,
-            comments: data.num_comments ?? 0,
-            shares: data.num_votes ?? 0,
+            likes: Array.isArray(data.likes) ? data.likes.length : (typeof data.likes === 'number' ? data.likes : 0),
+            comments: typeof data.num_comments === 'number' ? data.num_comments : 0,
+            shares: typeof data.num_votes === 'number' ? data.num_votes : 0,
             hashtags,
             createdAt: data.time_posted && data.time_posted.toDate
               ? data.time_posted.toDate().toLocaleDateString()
@@ -194,6 +194,7 @@ const SharedVideoPage: React.FC = () => {
               title={`Performance de ${video.userName}`}
               description={video.caption}
               hashtags={video.hashtags}
+              initialLikeCount={video.likes}
               className="w-full h-full"
             />
           </div>

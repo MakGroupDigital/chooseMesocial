@@ -17,8 +17,8 @@ import { getFirestoreDb } from './firebase';
 const db = getFirestoreDb();
 
 // NOUVELLE LOGIQUE:
-// - 1 pronostic gagné = 10 points
-// - 1000 points = 10000 CDF
+// - 1 pronostic gagné = 100 points
+// - 1000 points = 1 USD
 // - Retrait minimum: 1000 points
 // - Mobile Money uniquement
 
@@ -55,7 +55,7 @@ export interface Withdrawal {
   id: string;
   userId: string;
   amount: number;  // En points
-  amountCDF: number;  // Montant en CDF (amount * 10)
+  amountUSD: number;  // Montant en USD
   method: 'mobile_money';
   operator: string;  // Orange Money, M-Pesa, etc.
   accountDetails: string;
@@ -81,20 +81,20 @@ export const MOBILE_MONEY_OPERATORS = [
 
 // Constantes
 const MIN_WITHDRAWAL_POINTS = 1000;  // Minimum 1000 points
-const POINTS_TO_CDF = 10;  // 1 point = 10 CDF
+const POINTS_PER_USD = 1000;  // 1000 points = 1 USD
 
 /**
- * Convertit les points en CDF
+ * Convertit les points en USD
  */
-export function pointsToCDF(points: number): number {
-  return points * POINTS_TO_CDF;
+export function pointsToUSD(points: number): number {
+  return points / POINTS_PER_USD;
 }
 
 /**
- * Convertit les CDF en points
+ * Convertit les USD en points
  */
-export function cdfToPoints(cdf: number): number {
-  return Math.floor(cdf / POINTS_TO_CDF);
+export function usdToPoints(usd: number): number {
+  return Math.floor(usd * POINTS_PER_USD);
 }
 
 /**
@@ -145,21 +145,27 @@ export async function getUserWallet(userId: string): Promise<WalletData | null> 
 export async function getWalletStats(userId: string): Promise<WalletStats> {
   try {
     const wallet = await getUserWallet(userId);
-    
-    // Récupérer les transactions du mois
+
+    // Récupérer les transactions utilisateur sans contraintes composites
+    // puis filtrer côté client pour éviter les erreurs d'index en dev.
+    const transactionsRef = collection(db, 'transactions');
+    const userTxQuery = query(
+      transactionsRef,
+      where('user_ref', '==', doc(db, 'users', userId))
+    );
+    const allUserTransactionsSnap = await getDocs(userTxQuery);
+
+    // Récupérer les transactions du mois (type credit)
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const transactionsRef = collection(db, 'transactions');
-    const q = query(
-      transactionsRef,
-      where('user_ref', '==', doc(db, 'users', userId)),
-      where('type', '==', 'credit'),
-      where('created_at', '>=', Timestamp.fromDate(startOfMonth))
-    );
-    
-    const snapshot = await getDocs(q);
-    const monthlyEarnings = snapshot.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
+    const monthlyEarnings = allUserTransactionsSnap.docs.reduce((sum, txDoc) => {
+      const data = txDoc.data() as any;
+      const createdAtDate = data.created_at?.toDate ? data.created_at.toDate() : null;
+      if (data.type === 'credit' && createdAtDate && createdAtDate >= startOfMonth) {
+        return sum + (data.amount || 0);
+      }
+      return sum;
+    }, 0);
     
     // Récupérer les stats de pronostics
     const pronosticsRef = collection(db, 'pronostics');
@@ -200,14 +206,21 @@ export async function getTransactionHistory(userId: string, limitCount = 20): Pr
     const transactionsRef = collection(db, 'transactions');
     const q = query(
       transactionsRef,
-      where('user_ref', '==', doc(db, 'users', userId)),
-      orderBy('created_at', 'desc'),
-      limit(limitCount)
+      where('user_ref', '==', doc(db, 'users', userId))
     );
     
     const snapshot = await getDocs(q);
-    
-    return snapshot.docs.map(docData => {
+
+    const sortedDocs = snapshot.docs
+      .slice()
+      .sort((a, b) => {
+        const aDate = a.data().created_at?.toDate ? a.data().created_at.toDate().getTime() : 0;
+        const bDate = b.data().created_at?.toDate ? b.data().created_at.toDate().getTime() : 0;
+        return bDate - aDate;
+      })
+      .slice(0, limitCount);
+
+    return sortedDocs.map(docData => {
       const data = docData.data();
       return {
         id: docData.id,
@@ -235,21 +248,28 @@ export async function getWithdrawalHistory(userId: string, limitCount = 10): Pro
     const withdrawalsRef = collection(db, 'withdrawals');
     const q = query(
       withdrawalsRef,
-      where('user_ref', '==', doc(db, 'users', userId)),
-      orderBy('requested_at', 'desc'),
-      limit(limitCount)
+      where('user_ref', '==', doc(db, 'users', userId))
     );
     
     const snapshot = await getDocs(q);
-    
-    return snapshot.docs.map(docData => {
+
+    const sortedDocs = snapshot.docs
+      .slice()
+      .sort((a, b) => {
+        const aDate = a.data().requested_at?.toDate ? a.data().requested_at.toDate().getTime() : 0;
+        const bDate = b.data().requested_at?.toDate ? b.data().requested_at.toDate().getTime() : 0;
+        return bDate - aDate;
+      })
+      .slice(0, limitCount);
+
+    return sortedDocs.map(docData => {
       const data = docData.data();
       const amount = data.amount || 0;
       return {
         id: docData.id,
         userId,
         amount,
-        amountCDF: pointsToCDF(amount),
+        amountUSD: data.amount_usd ?? pointsToUSD(amount),
         method: 'mobile_money',
         operator: data.operator || '',
         accountDetails: data.account_details,
@@ -279,7 +299,7 @@ export async function requestWithdrawal(
     if (points < MIN_WITHDRAWAL_POINTS) {
       return { 
         success: false, 
-        error: `Minimum ${MIN_WITHDRAWAL_POINTS} points (${pointsToCDF(MIN_WITHDRAWAL_POINTS)} CDF)` 
+        error: `Minimum ${MIN_WITHDRAWAL_POINTS} points (${pointsToUSD(MIN_WITHDRAWAL_POINTS).toFixed(2)} USD)` 
       };
     }
     
@@ -310,7 +330,7 @@ export async function requestWithdrawal(
     await addDoc(withdrawalsRef, {
       user_ref: doc(db, 'users', userId),
       amount: points,
-      amount_cdf: pointsToCDF(points),
+      amount_usd: pointsToUSD(points),
       method: 'mobile_money',
       operator,
       account_details: phoneNumber,

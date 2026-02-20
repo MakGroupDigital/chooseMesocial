@@ -29,11 +29,52 @@ class PermissionService {
   };
 
   private permissionCallbacks: Map<PermissionType, (granted: boolean) => void> = new Map();
+  private readonly STORAGE_KEY = 'chooseme_permissions';
+
+  constructor() {
+    this.loadPermissionsFromStorage();
+  }
+
+  /**
+   * Charger les permissions depuis localStorage
+   */
+  private loadPermissionsFromStorage(): void {
+    try {
+      const stored = localStorage.getItem(this.STORAGE_KEY);
+      if (stored) {
+        const permissions = JSON.parse(stored);
+        this.permissionStates = { ...this.permissionStates, ...permissions };
+      }
+    } catch (e) {
+      console.error('Erreur chargement permissions:', e);
+    }
+  }
+
+  /**
+   * Sauvegarder les permissions dans localStorage
+   */
+  private savePermissionsToStorage(): void {
+    try {
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.permissionStates));
+    } catch (e) {
+      console.error('Erreur sauvegarde permissions:', e);
+    }
+  }
 
   /**
    * Demander la permission caméra
    */
   async requestCamera(): Promise<boolean> {
+    // Si déjà accordée, retourner true directement
+    if (this.permissionStates.camera === 'granted') {
+      return true;
+    }
+
+    // Si déjà refusée, retourner false directement
+    if (this.permissionStates.camera === 'denied') {
+      return false;
+    }
+
     return this.requestPermission('camera', {
       type: 'camera',
       title: 'Accès à la caméra',
@@ -44,13 +85,16 @@ class PermissionService {
           const stream = await navigator.mediaDevices.getUserMedia({ video: true });
           stream.getTracks().forEach(track => track.stop());
           this.permissionStates.camera = 'granted';
+          this.savePermissionsToStorage();
         } catch (e) {
           this.permissionStates.camera = 'denied';
+          this.savePermissionsToStorage();
           throw e;
         }
       },
       onDeny: () => {
         this.permissionStates.camera = 'denied';
+        this.savePermissionsToStorage();
       }
     });
   }
@@ -59,6 +103,16 @@ class PermissionService {
    * Demander la permission microphone
    */
   async requestMicrophone(): Promise<boolean> {
+    // Si déjà accordée, retourner true directement
+    if (this.permissionStates.microphone === 'granted') {
+      return true;
+    }
+
+    // Si déjà refusée, retourner false directement
+    if (this.permissionStates.microphone === 'denied') {
+      return false;
+    }
+
     return this.requestPermission('microphone', {
       type: 'microphone',
       title: 'Accès au microphone',
@@ -69,13 +123,16 @@ class PermissionService {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           stream.getTracks().forEach(track => track.stop());
           this.permissionStates.microphone = 'granted';
+          this.savePermissionsToStorage();
         } catch (e) {
           this.permissionStates.microphone = 'denied';
+          this.savePermissionsToStorage();
           throw e;
         }
       },
       onDeny: () => {
         this.permissionStates.microphone = 'denied';
+        this.savePermissionsToStorage();
       }
     });
   }
@@ -84,6 +141,16 @@ class PermissionService {
    * Demander la permission notifications
    */
   async requestNotifications(): Promise<boolean> {
+    // Si déjà accordée, retourner true directement
+    if (this.permissionStates.notifications === 'granted') {
+      return true;
+    }
+
+    // Si déjà refusée, retourner false directement
+    if (this.permissionStates.notifications === 'denied') {
+      return false;
+    }
+
     return this.requestPermission('notifications', {
       type: 'notifications',
       title: 'Notifications',
@@ -93,14 +160,17 @@ class PermissionService {
         if ('Notification' in window) {
           if (Notification.permission === 'granted') {
             this.permissionStates.notifications = 'granted';
+            this.savePermissionsToStorage();
           } else if (Notification.permission !== 'denied') {
             const permission = await Notification.requestPermission();
             this.permissionStates.notifications = permission === 'granted' ? 'granted' : 'denied';
+            this.savePermissionsToStorage();
           }
         }
       },
       onDeny: () => {
         this.permissionStates.notifications = 'denied';
+        this.savePermissionsToStorage();
       }
     });
   }
@@ -109,6 +179,16 @@ class PermissionService {
    * Demander la permission localisation
    */
   async requestLocation(): Promise<boolean> {
+    // Si déjà accordée, retourner true directement
+    if (this.permissionStates.location === 'granted') {
+      return true;
+    }
+
+    // Si déjà refusée, retourner false directement
+    if (this.permissionStates.location === 'denied') {
+      return false;
+    }
+
     return this.requestPermission('location', {
       type: 'location',
       title: 'Accès à la localisation',
@@ -119,10 +199,12 @@ class PermissionService {
           navigator.geolocation.getCurrentPosition(
             () => {
               this.permissionStates.location = 'granted';
+              this.savePermissionsToStorage();
               resolve();
             },
             () => {
               this.permissionStates.location = 'denied';
+              this.savePermissionsToStorage();
               reject(new Error('Location denied'));
             }
           );
@@ -130,6 +212,7 @@ class PermissionService {
       },
       onDeny: () => {
         this.permissionStates.location = 'denied';
+        this.savePermissionsToStorage();
       }
     });
   }
@@ -138,6 +221,16 @@ class PermissionService {
    * Demander la permission stockage
    */
   async requestStorage(): Promise<boolean> {
+    // Si déjà accordée, retourner true directement
+    if (this.permissionStates.storage === 'granted') {
+      return true;
+    }
+
+    // Si déjà refusée, retourner false directement
+    if (this.permissionStates.storage === 'denied') {
+      return false;
+    }
+
     return this.requestPermission('storage', {
       type: 'storage',
       title: 'Accès au stockage',
@@ -146,9 +239,11 @@ class PermissionService {
       onAllow: async () => {
         // Pour le web, on simule l'accès au stockage
         this.permissionStates.storage = 'granted';
+        this.savePermissionsToStorage();
       },
       onDeny: () => {
         this.permissionStates.storage = 'denied';
+        this.savePermissionsToStorage();
       }
     });
   }
@@ -209,6 +304,7 @@ class PermissionService {
       location: 'unknown',
       notifications: 'unknown'
     };
+    localStorage.removeItem(this.STORAGE_KEY);
   }
 
   /**

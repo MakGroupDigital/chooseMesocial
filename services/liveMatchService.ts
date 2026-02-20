@@ -3,6 +3,7 @@ import {
   doc, 
   addDoc, 
   updateDoc, 
+  increment,
   query, 
   where, 
   getDocs, 
@@ -74,9 +75,13 @@ const SUPPORTED_LEAGUES: Record<string, string> = {
 // Cache pour éviter trop de requêtes
 let matchesCache: { data: Match[]; timestamp: number } | null = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const REQUEST_DELAY_MS = 120;
+const UPCOMING_LIMIT = 8;
+const RECENT_LIMIT = 8;
 
 /**
- * Récupère les matchs du jour depuis TheSportsDB
+ * Récupère des matchs réels (live/à venir/récents) depuis TheSportsDB.
+ * L'API est gratuite et ne nécessite pas de compte côté client.
  */
 export async function fetchTodayMatches(): Promise<Match[]> {
   try {
@@ -88,63 +93,96 @@ export async function fetchTodayMatches(): Promise<Match[]> {
 
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
-    
-    console.log(`🔍 Récupération des matchs pour le ${dateStr}`);
+    console.log(`🔍 Récupération des matchs réels autour du ${dateStr}`);
     
     const allMatches: Match[] = [];
+    const seenEventIds = new Set<string>();
     
-    // Récupérer les matchs pour chaque ligue
+    // Récupérer les matchs pour chaque ligue (jour + prochains + récents)
     for (const [leagueName, leagueId] of Object.entries(SUPPORTED_LEAGUES)) {
       try {
-        const url = `${THESPORTSDB_BASE_URL}/eventsday.php?d=${dateStr}&l=${leagueId}`;
-        console.log(`📡 Requête: ${url}`);
-        
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.events && Array.isArray(data.events)) {
-          console.log(`✅ ${data.events.length} matchs trouvés pour ${leagueName}`);
-          
+        const endpointConfigs = [
+          `${THESPORTSDB_BASE_URL}/eventsday.php?d=${dateStr}&l=${leagueId}`,
+          `${THESPORTSDB_BASE_URL}/eventsnextleague.php?id=${leagueId}`,
+          `${THESPORTSDB_BASE_URL}/eventspastleague.php?id=${leagueId}`,
+        ];
+
+        for (const url of endpointConfigs) {
+          console.log(`📡 Requête: ${url}`);
+          const response = await fetch(url);
+          if (!response.ok) {
+            console.warn(`⚠️ Réponse API non OK (${response.status}) pour ${leagueName}`);
+            continue;
+          }
+
+          const data = await response.json();
+          if (!data?.events || !Array.isArray(data.events)) {
+            continue;
+          }
+
           for (const event of data.events) {
             try {
+              const eventId = String(event?.idEvent || '');
+              if (!eventId || seenEventIds.has(eventId)) {
+                continue;
+              }
+
               const match = parseTheSportsDbEvent(event, leagueName);
+              // N'injecter que des matchs réellement exploitables.
+              if (!match.teamAName || !match.teamBName) {
+                continue;
+              }
+
+              seenEventIds.add(eventId);
               allMatches.push(match);
             } catch (e) {
               console.warn('⚠️ Erreur parsing match:', e);
             }
           }
-        } else {
-          console.log(`ℹ️ Aucun match pour ${leagueName}`);
+
+          // Petite pause pour éviter de surcharger l'API
+          await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS));
         }
-        
-        // Petite pause pour éviter de surcharger l'API
-        await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
         console.error(`❌ Erreur pour ${leagueName}:`, error);
       }
     }
     
-    // Si aucun match trouvé, utiliser les données de test
+    // Si aucun match réel trouvé, retourner une liste vide (jamais de faux matchs)
     if (allMatches.length === 0) {
-      console.log('⚠️ Aucun match trouvé, utilisation des données de test');
-      return getTestMatches();
+      console.log('⚠️ Aucun match réel trouvé depuis l’API');
+      return [];
     }
     
+    // Garder un volume raisonnable côté UI tout en couvrant les 3 onglets
+    const now = Date.now();
+    const liveMatches = allMatches.filter(m => m.status === 'live');
+    const upcomingMatches = allMatches
+      .filter(m => m.status === 'scheduled' && m.startTime.getTime() >= now)
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+      .slice(0, UPCOMING_LIMIT);
+    const recentFinishedMatches = allMatches
+      .filter(m => m.status === 'finished')
+      .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
+      .slice(0, RECENT_LIMIT);
+    
+    const curatedMatches = [...liveMatches, ...upcomingMatches, ...recentFinishedMatches];
+    
     // Trier par heure de début
-    allMatches.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    curatedMatches.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
     
     // Mettre en cache
     matchesCache = {
-      data: allMatches,
+      data: curatedMatches,
       timestamp: Date.now()
     };
     
-    console.log(`✅ Total: ${allMatches.length} matchs récupérés`);
+    console.log(`✅ Total: ${curatedMatches.length} matchs réels récupérés`);
     
-    return allMatches;
+    return curatedMatches;
   } catch (error) {
     console.error('❌ Erreur récupération matchs:', error);
-    return getTestMatches();
+    return [];
   }
 }
 
@@ -154,44 +192,66 @@ export async function fetchTodayMatches(): Promise<Match[]> {
 function parseTheSportsDbEvent(event: any, leagueName: string): Match {
   // Parser la date et l'heure
   const dateStr = event.dateEvent;
-  const timeStr = event.strTime;
+  const timeStr = event.strTime || event.strTimeLocal;
   
   let startTime = new Date();
   if (dateStr) {
     startTime = new Date(dateStr);
     if (timeStr) {
-      const [hours, minutes] = timeStr.split(':');
-      startTime.setHours(parseInt(hours), parseInt(minutes));
+      const [hours, minutes] = String(timeStr).split(':');
+      const h = Number.parseInt(hours ?? '0', 10);
+      const m = Number.parseInt(minutes ?? '0', 10);
+      if (!Number.isNaN(h) && !Number.isNaN(m)) {
+        startTime.setHours(h, m, 0, 0);
+      }
     }
   }
   
   // Déterminer le statut
   let status: Match['status'] = 'scheduled';
-  const statusStr = event.strStatus || '';
+  const statusStr = String(event.strStatus || '').toLowerCase();
+  const hasScore =
+    event.intHomeScore !== null &&
+    event.intHomeScore !== undefined &&
+    event.intAwayScore !== null &&
+    event.intAwayScore !== undefined;
   
-  if (statusStr.includes('FT') || statusStr.includes('Finished')) {
+  if (
+    statusStr.includes('ft') ||
+    statusStr.includes('finished') ||
+    statusStr.includes('after penalties') ||
+    statusStr.includes('aet')
+  ) {
     status = 'finished';
-  } else if (statusStr.includes('Live') || statusStr.includes('1H') || 
-             statusStr.includes('2H') || statusStr.includes('HT')) {
+  } else if (
+    statusStr.includes('live') ||
+    statusStr.includes('1h') ||
+    statusStr.includes('2h') ||
+    statusStr.includes('ht') ||
+    statusStr.includes('in play')
+  ) {
     status = 'live';
-  } else if (statusStr.includes('Postponed') || statusStr.includes('Cancelled')) {
+  } else if (statusStr.includes('postponed') || statusStr.includes('cancelled')) {
     status = 'postponed';
+  } else if (hasScore) {
+    // Certaines réponses n'ont pas strStatus fiable : la présence du score indique terminé/en cours.
+    status = startTime.getTime() < Date.now() ? 'finished' : 'scheduled';
   }
   
   return {
-    id: event.idEvent,
-    externalId: event.idEvent,
+    id: String(event.idEvent || ''),
+    externalId: String(event.idEvent || ''),
     teamAName: event.strHomeTeam || '',
-    teamALogo: event.strHomeTeamBadge || event.strThumb || '',
+    teamALogo: event.strHomeTeamBadge || '',
     teamBName: event.strAwayTeam || '',
     teamBLogo: event.strAwayTeamBadge || '',
-    competition: leagueName,
+    competition: event.strLeague || leagueName,
     startTime,
     status,
-    scoreA: parseInt(event.intHomeScore || '0'),
-    scoreB: parseInt(event.intAwayScore || '0'),
+    scoreA: Number.parseInt(String(event.intHomeScore ?? '0'), 10) || 0,
+    scoreB: Number.parseInt(String(event.intAwayScore ?? '0'), 10) || 0,
     matchMinute: undefined,
-    predictionsEnabled: true,
+    predictionsEnabled: status === 'scheduled',
     rewardAmount: 100,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -245,13 +305,15 @@ export async function syncMatchesToFirestore(): Promise<{ created: number; updat
           // Ne mettre à jour que si les données ont changé
           if (existingData.status !== match.status ||
               existingData.score_a !== match.scoreA ||
-              existingData.score_b !== match.scoreB) {
+              existingData.score_b !== match.scoreB ||
+              Number(existingData.reward_amount || 0) !== 100) {
             
             await updateDoc(existingDoc.ref, {
               status: match.status,
               score_a: match.scoreA,
               score_b: match.scoreB,
               match_minute: match.matchMinute || 0,
+              reward_amount: 100,
               updated_at: serverTimestamp(),
             });
             updated++;
@@ -282,12 +344,17 @@ export async function syncMatchesToFirestore(): Promise<{ created: number; updat
 export async function getMatchesFromFirestore(): Promise<Match[]> {
   try {
     const matchesRef = collection(db, 'matches');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const windowStart = new Date();
+    windowStart.setDate(windowStart.getDate() - 1);
+    windowStart.setHours(0, 0, 0, 0);
+    const windowEnd = new Date();
+    windowEnd.setDate(windowEnd.getDate() + 10);
+    windowEnd.setHours(23, 59, 59, 999);
     
     const q = query(
       matchesRef,
-      where('start_time', '>=', Timestamp.fromDate(today)),
+      where('start_time', '>=', Timestamp.fromDate(windowStart)),
+      where('start_time', '<=', Timestamp.fromDate(windowEnd)),
       orderBy('start_time', 'asc')
     );
     
@@ -309,7 +376,7 @@ export async function getMatchesFromFirestore(): Promise<Match[]> {
         scoreB: data.score_b,
         matchMinute: data.match_minute,
         predictionsEnabled: data.predictions_enabled,
-        rewardAmount: data.reward_amount,
+        rewardAmount: Number(data.reward_amount || 100),
         createdAt: data.created_at?.toDate() || new Date(),
         updatedAt: data.updated_at?.toDate() || new Date(),
       };
@@ -330,7 +397,26 @@ export async function submitPrediction(
   prediction: 'team_a' | 'draw' | 'team_b'
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // Vérifier si l'utilisateur a déjà fait un pronostic
+    // Règle produit: 1 seul pronostic par jour et par utilisateur.
+    const alreadyPredictedToday = await hasSubmittedPredictionToday(userId);
+    if (alreadyPredictedToday) {
+      return { success: false, error: 'Vous avez déjà fait votre pronostic aujourd’hui. Revenez demain.' };
+    }
+
+    // Vérifier si l'utilisateur a déjà fait un pronostic (clé stricte user_id + match_id)
+    const pronosticsRef = collection(db, 'pronostics');
+    const strictQuery = query(
+      pronosticsRef,
+      where('user_id', '==', userId),
+      where('match_id', '==', matchId),
+      limit(1)
+    );
+    const strictSnapshot = await getDocs(strictQuery);
+    if (!strictSnapshot.empty) {
+      return { success: false, error: 'Vous avez déjà fait un pronostic pour ce match' };
+    }
+
+    // Fallback legacy: anciens documents sans user_id/match_id
     const existingPrediction = await getUserPrediction(userId, matchId);
     if (existingPrediction) {
       return { success: false, error: 'Vous avez déjà fait un pronostic pour ce match' };
@@ -348,10 +434,11 @@ export async function submitPrediction(
     }
     
     // Créer le pronostic
-    const pronosticsRef = collection(db, 'pronostics');
     await addDoc(pronosticsRef, {
       user_ref: doc(db, 'users', userId),
       match_ref: doc(db, 'matches', matchId),
+      user_id: userId,
+      match_id: matchId,
       prediction,
       submitted_at: serverTimestamp(),
       status: 'pending',
@@ -366,21 +453,84 @@ export async function submitPrediction(
   }
 }
 
+async function hasSubmittedPredictionToday(userId: string): Promise<boolean> {
+  const pronosticsRef = collection(db, 'pronostics');
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  const d = today.getDate();
+  const dayStart = new Date(y, m, d, 0, 0, 0, 0).getTime();
+  const dayEnd = new Date(y, m, d, 23, 59, 59, 999).getTime();
+
+  const strictQ = query(pronosticsRef, where('user_id', '==', userId));
+  const strictSnap = await getDocs(strictQ);
+  for (const docSnap of strictSnap.docs) {
+    const submittedAt = docSnap.data()?.submitted_at;
+    const submittedMs = submittedAt?.toDate ? submittedAt.toDate().getTime() : null;
+    if (submittedMs && submittedMs >= dayStart && submittedMs <= dayEnd) {
+      return true;
+    }
+  }
+
+  // Fallback legacy docs
+  const legacyUsersQ = query(pronosticsRef, where('user_ref', '==', doc(db, 'users', userId)));
+  const legacyUsersSnap = await getDocs(legacyUsersQ);
+  for (const docSnap of legacyUsersSnap.docs) {
+    const submittedAt = docSnap.data()?.submitted_at;
+    const submittedMs = submittedAt?.toDate ? submittedAt.toDate().getTime() : null;
+    if (submittedMs && submittedMs >= dayStart && submittedMs <= dayEnd) {
+      return true;
+    }
+  }
+
+  const legacyUserQ = query(pronosticsRef, where('user_ref', '==', doc(db, 'user', userId)));
+  const legacyUserSnap = await getDocs(legacyUserQ);
+  for (const docSnap of legacyUserSnap.docs) {
+    const submittedAt = docSnap.data()?.submitted_at;
+    const submittedMs = submittedAt?.toDate ? submittedAt.toDate().getTime() : null;
+    if (submittedMs && submittedMs >= dayStart && submittedMs <= dayEnd) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Récupère le pronostic d'un utilisateur pour un match
  */
 export async function getUserPrediction(userId: string, matchId: string): Promise<Pronostic | null> {
   try {
     const pronosticsRef = collection(db, 'pronostics');
-    const q = query(
+    const strictQ = query(
       pronosticsRef,
-      where('user_ref', '==', doc(db, 'users', userId)),
-      where('match_ref', '==', doc(db, 'matches', matchId)),
+      where('user_id', '==', userId),
+      where('match_id', '==', matchId),
       limit(1)
     );
-    
-    const snapshot = await getDocs(q);
-    
+
+    let snapshot = await getDocs(strictQ);
+
+    if (snapshot.empty) {
+      const legacyQ = query(
+        pronosticsRef,
+        where('user_ref', '==', doc(db, 'users', userId)),
+        where('match_ref', '==', doc(db, 'matches', matchId)),
+        limit(1)
+      );
+      snapshot = await getDocs(legacyQ);
+    }
+
+    if (snapshot.empty) {
+      const legacyUserCollectionQ = query(
+        pronosticsRef,
+        where('user_ref', '==', doc(db, 'user', userId)),
+        where('match_ref', '==', doc(db, 'matches', matchId)),
+        limit(1)
+      );
+      snapshot = await getDocs(legacyUserCollectionQ);
+    }
+
     if (snapshot.empty) {
       return null;
     }
@@ -605,8 +755,7 @@ async function processMatchPredictions(matchId: string, match: Match): Promise<v
       
       if (isWinner) {
         winners++;
-        // Créditer le portefeuille (à implémenter)
-        // await creditUserWallet(data.user_ref.id, 100);
+        await creditUserWallet(data.user_id || data.user_ref?.id, matchId);
       } else {
         losers++;
       }
@@ -618,64 +767,39 @@ async function processMatchPredictions(matchId: string, match: Match): Promise<v
   }
 }
 
-/**
- * Données de test
- */
-function getTestMatches(): Match[] {
-  const now = new Date();
-  
-  return [
-    {
-      id: 'test_1',
-      externalId: 'test_1',
-      teamAName: 'Real Madrid',
-      teamALogo: 'https://www.thesportsdb.com/images/media/team/badge/vwpvry1467462651.png',
-      teamBName: 'Barcelona',
-      teamBLogo: 'https://www.thesportsdb.com/images/media/team/badge/txrwth1468770530.png',
-      competition: 'La Liga',
-      startTime: new Date(now.getTime() + 2 * 60 * 60 * 1000),
-      status: 'scheduled',
-      scoreA: 0,
-      scoreB: 0,
-      predictionsEnabled: true,
-      rewardAmount: 100,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'test_2',
-      externalId: 'test_2',
-      teamAName: 'Manchester United',
-      teamALogo: 'https://www.thesportsdb.com/images/media/team/badge/vwpvry1467462651.png',
-      teamBName: 'Liverpool',
-      teamBLogo: 'https://www.thesportsdb.com/images/media/team/badge/uvxuxy1448813372.png',
-      competition: 'Premier League',
-      startTime: new Date(now.getTime() - 30 * 60 * 1000),
-      status: 'live',
-      scoreA: 1,
-      scoreB: 2,
-      matchMinute: 75,
-      predictionsEnabled: false,
-      rewardAmount: 100,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'test_3',
-      externalId: 'test_3',
-      teamAName: 'Bayern Munich',
-      teamALogo: 'https://www.thesportsdb.com/images/media/team/badge/uxsxqv1448813372.png',
-      teamBName: 'Borussia Dortmund',
-      teamBLogo: 'https://www.thesportsdb.com/images/media/team/badge/xqwpup1420746025.png',
-      competition: 'Bundesliga',
-      startTime: new Date(now.getTime() + 4 * 60 * 60 * 1000),
-      status: 'scheduled',
-      scoreA: 0,
-      scoreB: 0,
-      predictionsEnabled: true,
-      rewardAmount: 100,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
+async function creditUserWallet(userId: string, matchId: string): Promise<void> {
+  if (!userId) return;
+
+  const POINTS_PER_WIN = 100;
+  const userRef = doc(db, 'users', userId);
+  const walletsRef = collection(db, 'wallets');
+  const walletQuery = query(walletsRef, where('user_ref', '==', userRef), limit(1));
+  const walletSnapshot = await getDocs(walletQuery);
+
+  let walletRef: DocumentReference;
+  if (walletSnapshot.empty) {
+    walletRef = await addDoc(walletsRef, {
+      user_ref: userRef,
+      points: POINTS_PER_WIN,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp()
+    });
+  } else {
+    walletRef = walletSnapshot.docs[0].ref;
+    await updateDoc(walletRef, {
+      points: increment(POINTS_PER_WIN),
+      updated_at: serverTimestamp()
+    });
+  }
+
+  await addDoc(collection(db, 'transactions'), {
+    wallet_ref: walletRef,
+    user_ref: userRef,
+    match_ref: doc(db, 'matches', matchId),
+    type: 'credit',
+    amount: POINTS_PER_WIN,
+    reward_type: 'prediction_win',
+    description: 'Victoire pronostic (+100 points)',
+    created_at: serverTimestamp()
+  });
 }

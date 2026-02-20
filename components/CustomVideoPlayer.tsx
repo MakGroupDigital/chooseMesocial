@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize, MoreVertical, Share2, Download, Flag } from 'lucide-react';
+import LikeButton from './LikeButton';
+import { useLike } from '../hooks/useLike';
 
 interface CustomVideoPlayerProps {
   src: string;
@@ -13,6 +15,7 @@ interface CustomVideoPlayerProps {
   description?: string;
   hashtags?: string[];
   onShare?: () => void;
+  initialLikeCount?: number;
 }
 
 const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({ 
@@ -26,7 +29,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   title,
   description,
   hashtags = [],
-  onShare
+  onShare,
+  initialLikeCount = 0
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -37,6 +41,14 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Hook pour gérer les likes
+  const postDocPath = userId && videoId ? `users/${userId}/publication/${videoId}` : '';
+  const { isLiked, likeCount, handleLike, triggerAnimation } = useLike(postDocPath, initialLikeCount);
+
+  useEffect(() => {
+    console.log('🎬 CustomVideoPlayer - postDocPath:', postDocPath, 'userId:', userId, 'videoId:', videoId);
+  }, [postDocPath, userId, videoId]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -455,8 +467,18 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             </span>
           </div>
 
-          {/* Droite: Plein écran + Menu */}
+          {/* Droite: Like + Plein écran + Menu */}
           <div className="flex items-center gap-2">
+            {/* Like */}
+            <LikeButton
+              isLiked={isLiked}
+              likeCount={likeCount}
+              onLike={handleLike}
+              triggerAnimation={triggerAnimation}
+              size="md"
+              showCount={true}
+            />
+
             {/* Plein écran */}
             <button
               onClick={toggleFullscreen}

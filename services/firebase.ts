@@ -1,7 +1,16 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
-import { getAuth, type Auth, onAuthStateChanged, type User } from 'firebase/auth';
+import {
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  type Auth,
+  onAuthStateChanged,
+  type User
+} from 'firebase/auth';
+import { cordovaPopupRedirectResolver } from 'firebase/auth/cordova';
 import { getFirestore, type Firestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 
 // Configuration Firebase depuis les variables d'environnement Vite
 const firebaseConfig = {
@@ -26,7 +35,24 @@ export function getFirebaseApp(): FirebaseApp {
 
 export function getFirebaseAuth(): Auth {
   if (!authInstance) {
-    authInstance = getAuth(getFirebaseApp());
+    const app = getFirebaseApp();
+    const isNative = Capacitor.isNativePlatform();
+
+    // Web: laisser Firebase gérer le resolver popup/redirect par défaut via getAuth.
+    if (!isNative) {
+      authInstance = getAuth(app);
+      return authInstance;
+    }
+
+    try {
+      authInstance = initializeAuth(app, {
+        persistence: indexedDBLocalPersistence,
+        popupRedirectResolver: cordovaPopupRedirectResolver
+      });
+    } catch {
+      // Si Auth est déjà initialisé ailleurs, fallback sécurisé.
+      authInstance = getAuth(app);
+    }
   }
   return authInstance;
 }
@@ -61,5 +87,3 @@ export function useAuth() {
 // Exports pour compatibilité
 export const auth = getFirebaseAuth();
 export const db = getFirestoreDb();
-
-

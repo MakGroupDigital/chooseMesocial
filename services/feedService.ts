@@ -1,7 +1,137 @@
-import { collectionGroup, getDocs, orderBy, query, collection, getDoc, doc } from 'firebase/firestore';
+import { collectionGroup, getDocs, query, orderBy, collection, getDoc, doc } from 'firebase/firestore';
 import { getFirestoreDb } from './firebase';
 import type { FeedPost } from '../types';
 import { sortVideosByAlgorithm } from './feedAlgorithm';
+
+// Cache pour les infos utilisateur
+const userCache = new Map<string, { displayName: string; avatarUrl: string }>();
+const feedInMemoryCache = new Map<string, { data: FeedPost[]; updatedAt: number }>();
+const feedInFlightRequests = new Map<string, Promise<FeedPost[]>>();
+const FEED_CACHE_TTL_MS = 1000 * 60 * 3;
+const FEED_SESSION_KEY_PREFIX = 'chooseme:feed:v2:';
+const isDev = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV);
+
+function debugLog(...args: unknown[]): void {
+  if (isDev) {
+    // Logs détaillés seulement en dev pour éviter le bruit en production.
+    console.log(...args);
+  }
+}
+
+function normalizeFollowingUsers(followingUsers?: Set<string>): string[] {
+  if (!followingUsers || followingUsers.size === 0) return [];
+  return Array.from(followingUsers).sort();
+}
+
+function buildFeedCacheKey(options?: {
+  userId?: string;
+  followingUsers?: Set<string>;
+}): string {
+  const userId = options?.userId || 'guest';
+  const following = normalizeFollowingUsers(options?.followingUsers).join(',');
+  return `${userId}::${following}`;
+}
+
+function getSessionStorageKey(cacheKey: string): string {
+  return `${FEED_SESSION_KEY_PREFIX}${cacheKey}`;
+}
+
+function saveFeedToCache(cacheKey: string, data: FeedPost[]): void {
+  const payload = { data, updatedAt: Date.now() };
+  feedInMemoryCache.set(cacheKey, payload);
+
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(getSessionStorageKey(cacheKey), JSON.stringify(payload));
+    }
+  } catch {
+    // Ignore sessionStorage failures (private mode / quota).
+  }
+}
+
+function readFeedFromCache(cacheKey: string): { data: FeedPost[]; isFresh: boolean } | null {
+  const now = Date.now();
+  const inMemory = feedInMemoryCache.get(cacheKey);
+  if (inMemory) {
+    return { data: inMemory.data, isFresh: now - inMemory.updatedAt < FEED_CACHE_TTL_MS };
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const raw = window.sessionStorage.getItem(getSessionStorageKey(cacheKey));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { data?: FeedPost[]; updatedAt?: number };
+      if (!Array.isArray(parsed?.data) || typeof parsed?.updatedAt !== 'number') return null;
+      feedInMemoryCache.set(cacheKey, { data: parsed.data, updatedAt: parsed.updatedAt });
+      return { data: parsed.data, isFresh: now - parsed.updatedAt < FEED_CACHE_TTL_MS };
+    }
+  } catch {
+    // Ignore broken cache payload.
+  }
+
+  return null;
+}
+
+export function getCachedVideoFeed(options?: {
+  userId?: string;
+  followingUsers?: Set<string>;
+}): FeedPost[] {
+  const cacheKey = buildFeedCacheKey(options);
+  const cached = readFeedFromCache(cacheKey);
+  return cached?.data || [];
+}
+
+export function warmVideoFeedCache(options?: {
+  userId?: string;
+  followingUsers?: Set<string>;
+}): Promise<FeedPost[]> {
+  return fetchVideoFeed({ ...options, forceRefresh: false });
+}
+
+/**
+ * Récupère les infos utilisateur avec cache
+ */
+async function getUserInfo(userId: string, db: any): Promise<{ displayName: string; avatarUrl: string }> {
+  if (userCache.has(userId)) {
+    return userCache.get(userId)!;
+  }
+
+  try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      const info = {
+        displayName:
+          userData.displayName ||
+          userData.display_name ||
+          userData.userName ||
+          userData.username ||
+          userData.nom ||
+          userData.nomPoster ||
+          userData.name ||
+          '',
+        avatarUrl:
+          userData.avatarUrl ||
+          userData.photoUrl ||
+          userData.photo_url ||
+          userData.post_photo ||
+          userData.photo ||
+          ''
+      };
+      userCache.set(userId, info);
+      return info;
+    }
+  } catch (e) {
+    console.warn('Erreur récupération utilisateur:', userId);
+  }
+
+  const defaultInfo = {
+    displayName: '',
+    avatarUrl: ''
+  };
+  userCache.set(userId, defaultInfo);
+  return defaultInfo;
+}
 
 // Récupère les vidéos depuis deux sources :
 // 1. users/{userId}/performances (nouvelle structure)
@@ -10,14 +140,29 @@ export async function fetchVideoFeed(options?: {
   userId?: string;
   followingUsers?: Set<string>;
   recentlySeenVideos?: Set<string>;
+  forceRefresh?: boolean;
 }): Promise<FeedPost[]> {
+  const cacheKey = buildFeedCacheKey(options);
+  const cached = readFeedFromCache(cacheKey);
+
+  if (!options?.forceRefresh && cached?.isFresh && cached.data.length > 0) {
+    return cached.data;
+  }
+
+  const existingRequest = feedInFlightRequests.get(cacheKey);
+  if (existingRequest) {
+    return existingRequest;
+  }
+
   const db = getFirestoreDb();
 
-  try {
-    const allVideos: FeedPost[] = [];
+  const requestPromise = (async () => {
+    try {
+      const allVideos: FeedPost[] = [];
+      const userInfoPromises = new Map<string, Promise<{ displayName: string; avatarUrl: string }>>();
 
     // ========== SOURCE 1 : PERFORMANCES ==========
-    console.log('📹 Chargement des vidéos depuis performances...');
+    debugLog('📹 Chargement des vidéos depuis performances...');
     try {
       const performancesQuery = query(
         collectionGroup(db, 'performances'),
@@ -35,19 +180,9 @@ export async function fetchVideoFeed(options?: {
         const pathParts = docSnap.ref.path.split('/');
         const userId = pathParts[1];
 
-        // Récupérer les infos utilisateur
-        let userName = 'Talent';
-        let userAvatar = '/assets/images/app_launcher_icon.png';
-        
-        try {
-          const userDoc = await getDoc(doc(db, 'users', userId));
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            userName = userData.displayName || userData.display_name || 'Talent';
-            userAvatar = userData.avatarUrl || userData.photoUrl || userData.photo_url || '/assets/images/app_launcher_icon.png';
-          }
-        } catch (e) {
-          console.warn('Erreur récupération utilisateur:', userId);
+        // Récupérer les infos utilisateur EN PARALLÈLE
+        if (!userInfoPromises.has(userId)) {
+          userInfoPromises.set(userId, getUserInfo(userId, db));
         }
 
         const createdAt: string = data.createdAt && data.createdAt.toDate
@@ -61,11 +196,22 @@ export async function fetchVideoFeed(options?: {
         allVideos.push({
           id: `perf_${docSnap.id}`,
           userId: userId,
-          userName: userName,
-          userAvatar: userAvatar,
+          userName:
+            data.userName ||
+            data.username ||
+            data.nomPoster ||
+            data.displayName ||
+            data.display_name ||
+            '',
+          userAvatar:
+            data.userAvatar ||
+            data.avatarUrl ||
+            data.photoUrl ||
+            data.post_photo ||
+            '',
           type: 'video',
           url: videoUrl,
-          thumbnail: data.thumbnailUrl || userAvatar,
+          thumbnail: data.thumbnailUrl || '/assets/images/app_launcher_icon.png',
           caption: data.caption || data.description || '',
           likes: data.likes || 0,
           shares: data.shares || 0,
@@ -76,13 +222,13 @@ export async function fetchVideoFeed(options?: {
         });
       }
 
-      console.log(`✅ ${performancesSnap.size} vidéos chargées depuis performances`);
+      debugLog(`✅ ${performancesSnap.size} vidéos chargées depuis performances`);
     } catch (e) {
       console.warn('⚠️ Erreur chargement performances:', e);
     }
 
     // ========== SOURCE 2 : PUBLICATION (Flutter) ==========
-    console.log('📹 Chargement des vidéos depuis publication...');
+    debugLog('📹 Chargement des vidéos depuis publication...');
     try {
       const publicationQuery = query(
         collectionGroup(db, 'publication'),
@@ -100,6 +246,11 @@ export async function fetchVideoFeed(options?: {
         // Récupérer l'ID utilisateur depuis le chemin
         const pathParts = docSnap.ref.path.split('/');
         const userId = pathParts[1];
+
+        // Récupérer les infos utilisateur EN PARALLÈLE
+        if (!userInfoPromises.has(userId)) {
+          userInfoPromises.set(userId, getUserInfo(userId, db));
+        }
 
         const createdAt: string = data.time_posted && data.time_posted.toDate
           ? data.time_posted.toDate().toISOString()
@@ -124,8 +275,19 @@ export async function fetchVideoFeed(options?: {
         allVideos.push({
           id: `pub_${docSnap.id}`,
           userId: userId,
-          userName: data.nomPoster || 'Talent',
-          userAvatar: data.post_photo || '/assets/images/app_launcher_icon.png',
+          userName:
+            data.nomPoster ||
+            data.userName ||
+            data.displayName ||
+            data.display_name ||
+            data.username ||
+            '',
+          userAvatar:
+            data.post_photo ||
+            data.userAvatar ||
+            data.avatarUrl ||
+            data.photoUrl ||
+            '',
           type: 'video',
           url: videoUrl,
           thumbnail: data.post_photo || '',
@@ -139,21 +301,44 @@ export async function fetchVideoFeed(options?: {
         });
       }
 
-      console.log(`✅ ${publicationSnap.size} vidéos chargées depuis publication`);
+      debugLog(`✅ ${publicationSnap.size} vidéos chargées depuis publication`);
     } catch (e) {
       console.warn('⚠️ Erreur chargement publication:', e);
     }
 
-    console.log(`✅ TOTAL: ${allVideos.length} vidéos chargées (performances + publication)`);
+    // Attendre que toutes les infos utilisateur soient chargées EN PARALLÈLE
+    debugLog('⏳ Chargement des infos utilisateur...');
+    const userInfoResults = await Promise.all(userInfoPromises.values());
+    const userIds = Array.from(userInfoPromises.keys());
+    
+    // Mettre à jour les vidéos avec les infos utilisateur
+    allVideos.forEach(video => {
+      const userIndex = userIds.indexOf(video.userId);
+      if (userIndex !== -1 && userInfoResults[userIndex]) {
+        const userInfo = userInfoResults[userIndex];
+        // Conserver d'abord les infos du document vidéo, puis compléter depuis users/{id}.
+        video.userName = video.userName || userInfo.displayName || 'Talent';
+        video.userAvatar = video.userAvatar || userInfo.avatarUrl || '/assets/images/app_launcher_icon.png';
+      } else {
+        video.userName = video.userName || 'Talent';
+        video.userAvatar = video.userAvatar || '/assets/images/app_launcher_icon.png';
+      }
+    });
+
+    debugLog(`✅ TOTAL: ${allVideos.length} vidéos chargées (performances + publication)`);
     
     // Appliquer l'algorithme de tri intelligent
     const sortedVideos = sortVideosByAlgorithm(allVideos, options);
-    
+    saveFeedToCache(cacheKey, sortedVideos);
     return sortedVideos;
-  } catch (e) {
-    console.error('❌ Erreur chargement vidéos:', e);
-    return [];
-  }
+    } catch (e) {
+      console.error('❌ Erreur chargement vidéos:', e);
+      return cached?.data || [];
+    }
+  })().finally(() => {
+    feedInFlightRequests.delete(cacheKey);
+  });
+
+  feedInFlightRequests.set(cacheKey, requestPromise);
+  return requestPromise;
 }
-
-
