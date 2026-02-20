@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Settings, Bell, Shield, User, Camera, Mic, MapPin, HardDrive, LogOut, Moon, Globe, Smartphone, Trophy, Info, Mail, FileText } from 'lucide-react';
+import { ChevronLeft, Settings, Bell, Shield, User, Camera, Mic, MapPin, HardDrive, LogOut, Moon, Globe, Smartphone, Trophy, Info, Mail, FileText, Newspaper } from 'lucide-react';
 import { permissionService, PermissionType } from '../../services/permissionService';
 import { getFirebaseAuth, getFirestoreDb, useAuth } from '../../services/firebase';
 import { signOut } from 'firebase/auth';
@@ -136,6 +136,15 @@ const SettingsPage: React.FC = () => {
           <ToggleRow icon={<HardDrive size={18} />} label="Économie de données" value={settings.dataSaver} onToggle={() => toggleSetting('dataSaver')} />
           <SelectRow icon={<Globe size={18} />} label="Langue" value={settings.language} options={[{ label: 'Français', value: 'fr' }, { label: 'English', value: 'en' }]} onChange={(value) => void persistSettings({ ...settings, language: value as 'fr' | 'en' })} />
           <SelectRow icon={<Moon size={18} />} label="Thème" value={settings.theme} options={[{ label: 'Sombre', value: 'dark' }, { label: 'Clair', value: 'light' }, { label: 'Système', value: 'system' }]} onChange={(value) => void persistSettings({ ...settings, theme: value as AppTheme })} />
+        </Section>
+
+        <Section title="Obtenir un compte de presse">
+          <ActionRow
+            icon={<Newspaper size={18} />}
+            label="Activer un profil presse / média"
+            subtitle="Journaliste indépendant, magazine, TV/radio ou média digital. Formulaire adaptatif + justificatifs."
+            onClick={() => navigate('/settings/become-press')}
+          />
         </Section>
 
         <Section title="Devenir Athlète">

@@ -25,8 +25,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
     if (userType === UserType.ATHLETE || userType === UserType.PRESS) {
       items.push({ 
         icon: <IconPerf />,
-        label: userType === UserType.ATHLETE ? 'Perfs' : 'Publier', 
-        path: '/create-content' 
+        label: userType === UserType.ATHLETE ? 'Perfs' : 'Article',
+        path: userType === UserType.ATHLETE ? '/create-content' : '/create-press-content'
       });
     }
 

@@ -22,9 +22,11 @@ import ProfileEditPage from './features/profile/ProfileEditPage';
 import AthletePublicProfilePage from './features/profile/AthletePublicProfilePage';
 import SettingsPage from './features/profile/SettingsPage';
 import BecomeAthletePage from './features/profile/BecomeAthletePage';
+import BecomePressPage from './features/profile/BecomePressPage';
 import ExplorerPage from './features/explorer/ExplorerPage';
 import ReportageDetailPage from './features/explorer/ReportageDetailPage';
 import CreateContentPage from './features/content/CreateContentPage';
+import CreatePressContentPage from './features/content/CreatePressContentPage';
 import VideoDescriptionPage from './features/content/VideoDescriptionPage';
 import PerformanceRecordingPage from './features/content/PerformanceRecordingPage';
 import SharedVideoPage from './features/content/SharedVideoPage';
@@ -250,7 +252,7 @@ const App: React.FC = () => {
 
   if (loading) return <SplashPage />;
 
-  const hideNavOn = ['/onboarding', '/login', '/onboarding/type', '/onboarding/register', '/splash', '/video-description', '/record-performance', '/settings', '/settings/become-athlete'];
+  const hideNavOn = ['/onboarding', '/login', '/onboarding/type', '/onboarding/register', '/splash', '/video-description', '/record-performance', '/settings', '/settings/become-athlete', '/settings/become-press'];
   const hideNavByPrefix: string[] = [];
   const showNav =
     !hideNavOn.includes(location.pathname) &&
@@ -284,6 +286,7 @@ const App: React.FC = () => {
         <Route path="/explorer" element={<ExplorerPage userType={user?.type || UserType.ATHLETE} />} />
         <Route path="/explorer/reportage/:id" element={<ReportageDetailPage />} />
         <Route path="/create-content" element={<CreateContentPage userType={user?.type || UserType.ATHLETE} />} />
+        <Route path="/create-press-content" element={<CreatePressContentPage userType={user?.type || UserType.VISITOR} />} />
         <Route path="/video-description" element={<VideoDescriptionPage />} />
         <Route path="/record-performance" element={<PerformanceRecordingPage userType={user?.type || UserType.ATHLETE} />} />
         <Route path="/live-match" element={<LiveMatchesPage />} />
@@ -297,6 +300,7 @@ const App: React.FC = () => {
         <Route path="/profile/edit" element={<ProfileEditPage user={user || MOCK_USER} />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/become-athlete" element={<BecomeAthletePage />} />
+        <Route path="/settings/become-press" element={<BecomePressPage />} />
         <Route path="/athlete/:athleteId" element={<AthletePublicProfilePage viewerType={user?.type} />} />
         <Route path="/video/:videoId" element={<SharedVideoPage />} />
         

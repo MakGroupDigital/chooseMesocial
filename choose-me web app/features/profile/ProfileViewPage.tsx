@@ -9,8 +9,10 @@ import { getTalentInsight } from '../../services/geminiService';
 import { getFollowers, getFollowing } from '../../services/followService';
 import { listenToPerformanceVideos } from '../../services/performanceService';
 import { shareProfile, sharePerformanceVideo } from '../../services/shareService';
-import { getFirebaseAuth } from '../../services/firebase';
+import { getFirebaseAuth, getFirestoreDb } from '../../services/firebase';
 import { signOut } from 'firebase/auth';
+import { fetchPressArticlesByUser, type ReportageItem } from '../../services/reportageService';
+import { doc, getDoc } from 'firebase/firestore';
 
 const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const navigate = useNavigate();
@@ -22,11 +24,21 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const [loadingStats, setLoadingStats] = useState(true);
   const [performanceVideos, setPerformanceVideos] = useState<any[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(true);
+  const [pressArticles, setPressArticles] = useState<ReportageItem[]>([]);
+  const [loadingPressArticles, setLoadingPressArticles] = useState(false);
+  const [pressMeta, setPressMeta] = useState<{
+    pressName: string;
+    website: string;
+    categoryLabel: string;
+    description: string;
+    emailPro: string;
+  } | null>(null);
 
   // Pour l'instant, on considère que la page affiche toujours le profil connecté
   const viewerType = user.type;
   const isOwnProfile = true;
   const isRecruiterView = viewerType === UserType.RECRUITER || viewerType === UserType.CLUB;
+  const isPressProfile = user.type === UserType.PRESS;
 
   // Check for missing fields
   const missingFields = [];
@@ -88,7 +100,58 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   // Charger les vidéos de performance automatiquement
   useEffect(() => {
     console.log('🎬 Mise en place écoute vidéos pour:', user.uid);
-    
+
+    if (user.type === UserType.PRESS) {
+      let active = true;
+      void (async () => {
+        try {
+          const db = getFirestoreDb();
+          const usersSnap = await getDoc(doc(db, 'users', user.uid));
+          const legacySnap = await getDoc(doc(db, 'user', user.uid));
+          const data = usersSnap.exists() ? usersSnap.data() : legacySnap.data();
+          const profile = data?.pressProfile || {};
+          if (!active) return;
+          setPressMeta({
+            pressName:
+              profile.mediaName ||
+              profile.channelName ||
+              profile.agencyName ||
+              data?.pressName ||
+              user.displayName ||
+              'Presse',
+            website: data?.website || '',
+            categoryLabel: profile.categoryLabel || '',
+            description: profile.description || '',
+            emailPro: profile.emailPro || ''
+          });
+        } catch {
+          if (!active) return;
+          setPressMeta(null);
+        }
+      })();
+
+      setLoadingVideos(false);
+      setLoadingPressArticles(true);
+      void fetchPressArticlesByUser(user.uid)
+        .then((items) => {
+          if (!active) return;
+          setPressArticles(items);
+        })
+        .catch((e) => {
+          console.error('❌ Erreur chargement articles presse:', e);
+          if (!active) return;
+          setPressArticles([]);
+        })
+        .finally(() => {
+          if (!active) return;
+          setLoadingPressArticles(false);
+        });
+
+      return () => {
+        active = false;
+      };
+    }
+
     const unsubscribe = listenToPerformanceVideos(user.uid, (videos) => {
       console.log('🎬 Vidéos reçues:', videos.length);
       setPerformanceVideos(videos);
@@ -173,7 +236,7 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
         <div className="flex flex-col items-center mb-8">
           <div className="relative">
             <img 
-              src={user.avatarUrl || 'https://via.placeholder.com/144?text=No+Photo'} 
+              src={user.avatarUrl || '/assets/images/app_launcher_icon.png'} 
               className="w-36 h-36 rounded-[2.8rem] border-8 border-[#050505] shadow-2xl object-cover" 
               alt={user.displayName}
             />
@@ -188,6 +251,11 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
                <Check size={12} strokeWidth={4} className="text-black" />
             </div>
           </h1>
+          {isPressProfile && (
+            <p className="mt-1 text-[#19DB8A] text-sm font-semibold">
+              {pressMeta?.pressName || user.displayName || 'Presse'}
+            </p>
+          )}
           <div className="flex items-center gap-1 text-white/40 text-sm mt-1">
             <MapPin size={14} />
             <span>{user.country || 'Pays non défini'}</span>
@@ -268,57 +336,91 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
            </div>
         )}
 
-        {/* Performance Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-10">
-          <StatCard 
-            icon={<Activity size={18} />} 
-            label="Matchs" 
-            value={user.stats?.matchesPlayed || 0}
-            isEmpty={!user.stats?.matchesPlayed}
-          />
-          <StatCard 
-            icon={<Trophy size={18} className="text-[#FF8A3C]" />} 
-            label="Buts" 
-            value={user.stats?.goals || 0}
-            isEmpty={!user.stats?.goals}
-          />
-          <StatCard 
-            icon={<Award size={18} className="text-[#19DB8A]" />} 
-            label="Passes" 
-            value={user.stats?.assists || 0}
-            isEmpty={!user.stats?.assists}
-          />
-        </div>
+        {!isPressProfile && (
+          <div className="grid grid-cols-3 gap-3 mb-10">
+            <StatCard
+              icon={<Activity size={18} />}
+              label="Matchs"
+              value={user.stats?.matchesPlayed || 0}
+              isEmpty={!user.stats?.matchesPlayed}
+            />
+            <StatCard
+              icon={<Trophy size={18} className="text-[#FF8A3C]" />}
+              label="Buts"
+              value={user.stats?.goals || 0}
+              isEmpty={!user.stats?.goals}
+            />
+            <StatCard
+              icon={<Award size={18} className="text-[#19DB8A]" />}
+              label="Passes"
+              value={user.stats?.assists || 0}
+              isEmpty={!user.stats?.assists}
+            />
+          </div>
+        )}
 
         {/* Additional Info Section */}
         <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 mb-8">
-          <h3 className="text-lg font-bold text-white mb-4">Informations</h3>
+          <h3 className="text-lg font-bold text-white mb-4">{isPressProfile ? 'Informations média' : 'Informations'}</h3>
           <div className="space-y-4">
-            <InfoRow 
-              label="Sport" 
-              value={user.sport || 'Non défini'} 
-              isEmpty={!user.sport}
-            />
-            <InfoRow 
-              label="Poste / Spécialité" 
-              value={user.position || 'Non défini'} 
-              isEmpty={!user.position}
-            />
-            <InfoRow 
-              label="Taille" 
-              value={user.height ? `${user.height} cm` : 'Non défini'} 
-              isEmpty={!user.height}
-            />
-            <InfoRow 
-              label="Poids" 
-              value={user.weight ? `${user.weight} kg` : 'Non défini'} 
-              isEmpty={!user.weight}
-            />
-            <InfoRow 
-              label="Email" 
-              value={user.email || 'Non défini'} 
-              isEmpty={!user.email}
-            />
+            {!isPressProfile && (
+              <>
+                <InfoRow
+                  label="Sport"
+                  value={user.sport || 'Non défini'}
+                  isEmpty={!user.sport}
+                />
+                <InfoRow
+                  label="Poste / Spécialité"
+                  value={user.position || 'Non défini'}
+                  isEmpty={!user.position}
+                />
+                <InfoRow
+                  label="Taille"
+                  value={user.height ? `${user.height} cm` : 'Non défini'}
+                  isEmpty={!user.height}
+                />
+                <InfoRow
+                  label="Poids"
+                  value={user.weight ? `${user.weight} kg` : 'Non défini'}
+                  isEmpty={!user.weight}
+                />
+              </>
+            )}
+            {isPressProfile && (
+              <>
+                <InfoRow label="Nom presse" value={pressMeta?.pressName || user.displayName || 'Non défini'} isEmpty={false} />
+                <InfoRow
+                  label="Site web"
+                  value={pressMeta?.website || 'Non défini'}
+                  isEmpty={!pressMeta?.website}
+                  link={pressMeta?.website || ''}
+                />
+                <InfoRow
+                  label="Catégorie"
+                  value={pressMeta?.categoryLabel || 'Non défini'}
+                  isEmpty={!pressMeta?.categoryLabel}
+                />
+                <InfoRow
+                  label="Email rédaction"
+                  value={pressMeta?.emailPro || user.email || 'Non défini'}
+                  isEmpty={!pressMeta?.emailPro && !user.email}
+                />
+                {pressMeta?.description && (
+                  <div className="py-2">
+                    <p className="text-white/60 text-sm mb-1">Description</p>
+                    <p className="text-white text-sm">{pressMeta.description}</p>
+                  </div>
+                )}
+              </>
+            )}
+            {!isPressProfile && (
+              <InfoRow
+                label="Email"
+                value={user.email || 'Non défini'}
+                isEmpty={!user.email}
+              />
+            )}
             <InfoRow 
               label="Pays" 
               value={user.country || 'Non défini'} 
@@ -345,18 +447,18 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
         {/* Performance Videos */}
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold font-readex">Performances</h3>
-            {isOwnProfile && user.type === UserType.ATHLETE && (
+            <h3 className="text-xl font-bold font-readex">{isPressProfile ? 'Articles' : 'Performances'}</h3>
+            {isOwnProfile && (
               <button 
-                onClick={() => navigate('/create-content')}
+                onClick={() => navigate(isPressProfile ? '/create-press-content' : '/create-content')}
                 className="text-[#19DB8A] text-xs font-bold uppercase tracking-widest flex items-center gap-1 hover:text-[#19DB8A]/80"
               >
-                <Plus size={16} /> Ajouter
+                <Plus size={16} /> {isPressProfile ? 'Ajouter article' : 'Ajouter'}
               </button>
             )}
           </div>
 
-          {loadingVideos ? (
+          {(isPressProfile ? loadingPressArticles : loadingVideos) ? (
             <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-12 flex flex-col items-center justify-center">
               {/* Logo Choose Me en chargement - rogné en cercle */}
               <div className="relative w-24 h-24 mb-4 rounded-full overflow-hidden bg-white/5 border-4 border-[#19DB8A]/30 shadow-xl">
@@ -366,14 +468,18 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
                   className="w-full h-full object-cover animate-pulse"
                 />
               </div>
-              <p className="text-white/60 text-sm">Chargement des vidéos...</p>
+              <p className="text-white/60 text-sm">{isPressProfile ? 'Chargement des articles...' : 'Chargement des vidéos...'}</p>
             </div>
-          ) : performanceVideos.length === 0 ? (
+          ) : (isPressProfile ? pressArticles.length === 0 : performanceVideos.length === 0) ? (
             <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-12 flex flex-col items-center justify-center text-center">
               <Activity size={48} className="text-white/20 mb-4" />
-              <p className="text-white/60 text-sm mb-2">Aucune vidéo de performance pour le moment</p>
-              <p className="text-white/40 text-xs">Les vidéos de performance apparaîtront ici</p>
-              {isOwnProfile && user.type === UserType.ATHLETE && (
+              <p className="text-white/60 text-sm mb-2">
+                {isPressProfile ? 'Aucun article publié pour le moment' : 'Aucune vidéo de performance pour le moment'}
+              </p>
+              <p className="text-white/40 text-xs">
+                {isPressProfile ? 'Les articles photo et vidéo apparaîtront ici' : 'Les vidéos de performance apparaîtront ici'}
+              </p>
+              {isOwnProfile && !isPressProfile && user.type === UserType.ATHLETE && (
                 <button 
                   onClick={() => navigate('/create-content')}
                   className="mt-4 px-4 py-2 bg-[#19DB8A] text-black font-bold rounded-lg hover:bg-[#19DB8A]/90 text-sm"
@@ -384,34 +490,57 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4">
-              {performanceVideos.map((video, idx) => (
-                <div key={idx} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
-                  <CustomVideoPlayer
-                    src={video.videoUrl}
-                    poster={video.thumbnailUrl}
-                    caption={video.caption}
-                    isHD={video.processed}
-                    videoId={video.id}
-                    userId={video.userId}
-                    title={video.caption || `Vidéo de ${user.displayName}`}
-                    description={`Performance de ${user.displayName} - ${user.sport || 'Sport'} ${user.position ? `(${user.position})` : ''}`}
-                    hashtags={[
-                      'ChooseMe',
-                      user.sport?.replace(/\s+/g, '') || 'Sport',
-                      user.country?.replace(/\s+/g, '') || '',
-                      'Performance',
-                      'Talent'
-                    ].filter(Boolean)}
-                    onShare={async () => {
-                      if (video.id && video.userId) {
-                        const { incrementVideoShares } = await import('../../services/performanceService');
-                        await incrementVideoShares(video.userId, video.id);
-                      }
-                    }}
-                    className="w-full h-full"
-                  />
-                </div>
-              ))}
+              {isPressProfile
+                ? pressArticles.map((article) => (
+                    <div key={article.id} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
+                      {article.mediaType === 'video' ? (
+                        <CustomVideoPlayer
+                          src={article.mediaUrl}
+                          caption={article.title}
+                          title={article.title}
+                          description={article.detail}
+                          hashtags={['ChooseMe', 'Presse', 'Article']}
+                          className="w-full h-full"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col">
+                          <img src={article.mediaUrl} alt={article.title} className="w-full h-[72%] object-cover" />
+                          <div className="px-3 py-2">
+                            <p className="text-white text-xs font-semibold line-clamp-2">{article.title}</p>
+                            <p className="text-white/50 text-[10px] mt-1 line-clamp-2">{article.detail || 'Article presse'}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                : performanceVideos.map((video, idx) => (
+                    <div key={idx} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
+                      <CustomVideoPlayer
+                        src={video.videoUrl}
+                        poster={video.thumbnailUrl}
+                        caption={video.caption}
+                        isHD={video.processed}
+                        videoId={video.id}
+                        userId={video.userId}
+                        title={video.caption || `Vidéo de ${user.displayName}`}
+                        description={`Performance de ${user.displayName} - ${user.sport || 'Sport'} ${user.position ? `(${user.position})` : ''}`}
+                        hashtags={[
+                          'ChooseMe',
+                          user.sport?.replace(/\s+/g, '') || 'Sport',
+                          user.country?.replace(/\s+/g, '') || '',
+                          'Performance',
+                          'Talent'
+                        ].filter(Boolean)}
+                        onShare={async () => {
+                          if (video.id && video.userId) {
+                            const { incrementVideoShares } = await import('../../services/performanceService');
+                            await incrementVideoShares(video.userId, video.id);
+                          }
+                        }}
+                        className="w-full h-full"
+                      />
+                    </div>
+                  ))}
             </div>
           )}
         </div>
@@ -450,12 +579,23 @@ const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: number |
   </div>
 );
 
-const InfoRow: React.FC<{ label: string; value: string; isEmpty?: boolean }> = ({ label, value, isEmpty }) => (
+const InfoRow: React.FC<{ label: string; value: string; isEmpty?: boolean; link?: string }> = ({ label, value, isEmpty, link }) => (
   <div className="flex items-center justify-between py-3 border-b border-white/5 last:border-b-0">
     <span className="text-white/60 text-sm">{label}</span>
-    <span className={`font-semibold ${isEmpty ? 'text-white/30 italic' : 'text-white'}`}>
-      {isEmpty ? 'À compléter' : value}
-    </span>
+    {link && !isEmpty ? (
+      <a
+        href={link.startsWith('http') ? link : `https://${link}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold text-[#19DB8A] hover:underline text-right"
+      >
+        {value}
+      </a>
+    ) : (
+      <span className={`font-semibold ${isEmpty ? 'text-white/30 italic' : 'text-white'}`}>
+        {isEmpty ? 'À compléter' : value}
+      </span>
+    )}
   </div>
 );
 

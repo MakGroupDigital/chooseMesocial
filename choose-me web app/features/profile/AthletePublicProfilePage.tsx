@@ -8,9 +8,15 @@ import { UserProfile, UserType } from '../../types';
 import { getFollowers, getFollowing, followAthlete, isFollowing, unfollowAthlete } from '../../services/followService';
 import { getUserPerformanceVideos, PerformanceVideo } from '../../services/performanceService';
 import { getOrCreateConversation } from '../../services/chatService';
+import { fetchPressArticlesByUser, type ReportageItem } from '../../services/reportageService';
 
 type PublicProfileData = UserProfile & {
   rawSkills: string[];
+  pressName?: string;
+  pressWebsite?: string;
+  pressCategoryLabel?: string;
+  pressDescription?: string;
+  pressEmail?: string;
 };
 
 type AthletePageState = {
@@ -39,12 +45,18 @@ const AthletePublicProfilePage: React.FC<{ viewerType?: UserType }> = ({ viewerT
         height: pageState.prefillProfile.height,
         weight: pageState.prefillProfile.weight,
         stats: pageState.prefillProfile.stats || { matchesPlayed: 0, goals: 0, assists: 0, points: 0 },
-        rawSkills: []
+        rawSkills: [],
+        pressName: '',
+        pressWebsite: '',
+        pressCategoryLabel: '',
+        pressDescription: '',
+        pressEmail: ''
       } as PublicProfileData)
     : null;
 
   const [profile, setProfile] = useState<PublicProfileData | null>(quickProfile);
   const [videos, setVideos] = useState<PerformanceVideo[]>(pageState?.preloadedVideos || []);
+  const [pressArticles, setPressArticles] = useState<ReportageItem[]>([]);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [isFollowingAthlete, setIsFollowingAthlete] = useState(false);
@@ -122,19 +134,39 @@ const AthletePublicProfilePage: React.FC<{ viewerType?: UserType }> = ({ viewerT
             ...(Array.isArray(data?.specialites) ? data.specialites : []),
             ...(Array.isArray(data?.specialties) ? data.specialties : []),
           ].filter(Boolean),
+          pressName:
+            data?.pressProfile?.mediaName ||
+            data?.pressProfile?.channelName ||
+            data?.pressProfile?.agencyName ||
+            data?.pressName ||
+            data?.displayName ||
+            data?.display_name ||
+            'Presse',
+          pressWebsite: data?.website || data?.pressProfile?.website || '',
+          pressCategoryLabel: data?.pressProfile?.categoryLabel || '',
+          pressDescription: data?.pressProfile?.description || '',
+          pressEmail: data?.pressProfile?.emailPro || data?.email || '',
         };
 
         setProfile(mappedProfile);
 
-        const [followers, following, performanceVideos] = await Promise.all([
+        const [followers, following] = await Promise.all([
           getFollowers(athleteId),
           getFollowing(athleteId),
-          getUserPerformanceVideos(athleteId),
         ]);
 
         setFollowersCount(followers.length);
         setFollowingCount(following.length);
-        setVideos(performanceVideos);
+
+        if (mappedProfile.type === UserType.PRESS) {
+          const articles = await fetchPressArticlesByUser(athleteId);
+          setPressArticles(articles);
+          setVideos([]);
+        } else {
+          const performanceVideos = await getUserPerformanceVideos(athleteId);
+          setVideos(performanceVideos);
+          setPressArticles([]);
+        }
 
         if (currentUser?.uid && currentUser.uid !== athleteId) {
           const followingAthlete = await isFollowing(currentUser.uid, athleteId);
@@ -256,13 +288,16 @@ const AthletePublicProfilePage: React.FC<{ viewerType?: UserType }> = ({ viewerT
       <div className="px-6 -mt-16 pb-32 relative z-20">
         <div className="flex flex-col items-center mb-8">
           <img
-            src={profile.avatarUrl || 'https://via.placeholder.com/144?text=Athlete'}
+            src={profile.avatarUrl || '/assets/images/app_launcher_icon.png'}
             className="w-36 h-36 rounded-[2.8rem] border-8 border-[#050505] shadow-2xl object-cover"
             alt={profile.displayName}
           />
           <h1 className="mt-4 text-3xl font-readex font-bold text-white text-center">
             {profile.displayName}
           </h1>
+          {profile.type === UserType.PRESS && (
+            <p className="mt-1 text-[#19DB8A] text-sm font-semibold">{profile.pressName || profile.displayName}</p>
+          )}
           <div className="flex items-center gap-1 text-white/40 text-sm mt-1">
             <MapPin size={14} />
             <span>{profile.country || 'Pays non défini'}</span>
@@ -278,18 +313,44 @@ const AthletePublicProfilePage: React.FC<{ viewerType?: UserType }> = ({ viewerT
         <div className="grid grid-cols-3 gap-3 mb-8">
           <StatCard icon={<Users size={18} />} label="Abonnés" value={followersCount} />
           <StatCard icon={<Users size={18} className="text-[#FF8A3C]" />} label="Suivis" value={followingCount} />
-          <StatCard icon={<Activity size={18} className="text-[#19DB8A]" />} label="Vidéos" value={videos.length} />
+          <StatCard
+            icon={<Activity size={18} className="text-[#19DB8A]" />}
+            label={profile.type === UserType.PRESS ? 'Articles' : 'Vidéos'}
+            value={profile.type === UserType.PRESS ? pressArticles.length : videos.length}
+          />
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-8">
-          <StatCard icon={<Trophy size={18} />} label="Matchs" value={profile.stats?.matchesPlayed || 0} />
-          <StatCard icon={<Award size={18} className="text-[#FF8A3C]" />} label="Buts" value={profile.stats?.goals || 0} />
-          <StatCard icon={<Award size={18} className="text-[#19DB8A]" />} label="Passes" value={profile.stats?.assists || 0} />
-        </div>
+        {profile.type !== UserType.PRESS && (
+          <div className="grid grid-cols-3 gap-3 mb-8">
+            <StatCard icon={<Trophy size={18} />} label="Matchs" value={profile.stats?.matchesPlayed || 0} />
+            <StatCard icon={<Award size={18} className="text-[#FF8A3C]" />} label="Buts" value={profile.stats?.goals || 0} />
+            <StatCard icon={<Award size={18} className="text-[#19DB8A]" />} label="Passes" value={profile.stats?.assists || 0} />
+          </div>
+        )}
 
         <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 mb-8">
-          <h3 className="text-lg font-bold text-white mb-4">Compétences</h3>
-          {competencies.length === 0 ? (
+          <h3 className="text-lg font-bold text-white mb-4">{profile.type === UserType.PRESS ? 'Profil média' : 'Compétences'}</h3>
+          {profile.type === UserType.PRESS ? (
+            <div className="space-y-2 text-sm">
+              <InfoRow label="Type de compte" value="Presse / Média" />
+              <InfoRow label="Nom presse" value={profile.pressName || profile.displayName || 'Non défini'} />
+              <InfoRow
+                label="Site web"
+                value={profile.pressWebsite || 'Non défini'}
+                link={profile.pressWebsite || ''}
+              />
+              <InfoRow label="Catégorie" value={profile.pressCategoryLabel || 'Non défini'} />
+              <InfoRow label="Email rédaction" value={profile.pressEmail || 'Non défini'} />
+              <InfoRow label="Pays" value={profile.country || 'Non défini'} />
+              <InfoRow label="Ville" value={profile.city || 'Non défini'} />
+              {profile.pressDescription && (
+                <div className="pt-1">
+                  <p className="text-white/55 text-xs mb-1">Description</p>
+                  <p className="text-white text-sm">{profile.pressDescription}</p>
+                </div>
+              )}
+            </div>
+          ) : competencies.length === 0 ? (
             <p className="text-white/40 text-sm">Aucune compétence renseignée</p>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -303,44 +364,73 @@ const AthletePublicProfilePage: React.FC<{ viewerType?: UserType }> = ({ viewerT
               ))}
             </div>
           )}
-          <div className="mt-5 space-y-2 text-sm">
-            <InfoRow label="Sport" value={profile.sport || 'Non défini'} />
-            <InfoRow label="Poste / Spécialité" value={profile.position || 'Non défini'} />
-            <InfoRow label="Taille" value={profile.height ? `${profile.height} cm` : 'Non défini'} />
-            <InfoRow label="Poids" value={profile.weight ? `${profile.weight} kg` : 'Non défini'} />
-          </div>
+          {profile.type !== UserType.PRESS && (
+            <div className="mt-5 space-y-2 text-sm">
+              <InfoRow label="Sport" value={profile.sport || 'Non défini'} />
+              <InfoRow label="Poste / Spécialité" value={profile.position || 'Non défini'} />
+              <InfoRow label="Taille" value={profile.height ? `${profile.height} cm` : 'Non défini'} />
+              <InfoRow label="Poids" value={profile.weight ? `${profile.weight} kg` : 'Non défini'} />
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
-          <h3 className="text-xl font-bold font-readex text-white">Vidéos de performance</h3>
-          {videos.length === 0 ? (
+          <h3 className="text-xl font-bold font-readex text-white">
+            {profile.type === UserType.PRESS ? 'Articles' : 'Vidéos de performance'}
+          </h3>
+          {(profile.type === UserType.PRESS ? pressArticles.length === 0 : videos.length === 0) ? (
             <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-12 text-center">
-              <p className="text-white/60 text-sm">Aucune vidéo publiée pour le moment</p>
+              <p className="text-white/60 text-sm">
+                {profile.type === UserType.PRESS ? 'Aucun article publié pour le moment' : 'Aucune vidéo publiée pour le moment'}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4">
-              {videos.map((video, idx) => (
-                <div key={`${video.id || idx}`} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
-                  <CustomVideoPlayer
-                    src={video.videoUrl}
-                    poster={video.thumbnailUrl}
-                    caption={video.caption}
-                    isHD={video.processed}
-                    videoId={video.id}
-                    userId={video.userId}
-                    title={video.caption || `Vidéo de ${profile.displayName}`}
-                    description={`Performance de ${profile.displayName}`}
-                    hashtags={['ChooseMe', 'Performance', profile.sport || 'Sport'].filter(Boolean)}
-                    onShare={async () => {
-                      if (video.id && video.userId) {
-                        const { incrementVideoShares } = await import('../../services/performanceService');
-                        await incrementVideoShares(video.userId, video.id);
-                      }
-                    }}
-                    className="w-full h-full"
-                  />
-                </div>
-              ))}
+              {profile.type === UserType.PRESS
+                ? pressArticles.map((article) => (
+                    <div key={article.id} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
+                      {article.mediaType === 'video' ? (
+                        <CustomVideoPlayer
+                          src={article.mediaUrl}
+                          caption={article.title}
+                          title={article.title}
+                          description={article.detail}
+                          hashtags={['ChooseMe', 'Presse', 'Article']}
+                          className="w-full h-full"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col">
+                          <img src={article.mediaUrl} alt={article.title} className="w-full h-[72%] object-cover" />
+                          <div className="px-3 py-2">
+                            <p className="text-white text-xs font-semibold line-clamp-2">{article.title}</p>
+                            <p className="text-white/50 text-[10px] mt-1 line-clamp-2">{article.detail || 'Article presse'}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                : videos.map((video, idx) => (
+                    <div key={`${video.id || idx}`} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
+                      <CustomVideoPlayer
+                        src={video.videoUrl}
+                        poster={video.thumbnailUrl}
+                        caption={video.caption}
+                        isHD={video.processed}
+                        videoId={video.id}
+                        userId={video.userId}
+                        title={video.caption || `Vidéo de ${profile.displayName}`}
+                        description={`Performance de ${profile.displayName}`}
+                        hashtags={['ChooseMe', 'Performance', profile.sport || 'Sport'].filter(Boolean)}
+                        onShare={async () => {
+                          if (video.id && video.userId) {
+                            const { incrementVideoShares } = await import('../../services/performanceService');
+                            await incrementVideoShares(video.userId, video.id);
+                          }
+                        }}
+                        className="w-full h-full"
+                      />
+                    </div>
+                  ))}
             </div>
           )}
         </div>
@@ -359,10 +449,21 @@ const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: number |
   </div>
 );
 
-const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+const InfoRow: React.FC<{ label: string; value: string; link?: string }> = ({ label, value, link }) => (
   <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-b-0">
     <span className="text-white/60">{label}</span>
-    <span className="text-white font-semibold">{value}</span>
+    {link && value !== 'Non défini' ? (
+      <a
+        href={link.startsWith('http') ? link : `https://${link}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[#19DB8A] font-semibold hover:underline text-right"
+      >
+        {value}
+      </a>
+    ) : (
+      <span className="text-white font-semibold">{value}</span>
+    )}
   </div>
 );
 
