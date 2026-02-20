@@ -213,3 +213,21 @@ export const IconWallet: React.FC<IconProps> = ({ size = 22, className }) => (
   </svg>
 );
 
+export const IconMessage: React.FC<IconProps> = ({ size = 22, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    className={className}
+    fill="none"
+    stroke={stroke}
+    strokeWidth="1.7"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M5 6h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-4.5 3V8a2 2 0 0 1 2-2Z" />
+    <circle cx="9" cy="12" r="1.1" fill={primary} stroke="none" />
+    <circle cx="13" cy="12" r="1.1" fill={primary} stroke="none" />
+    <circle cx="17" cy="12" r="1.1" fill={accent} stroke="none" />
+  </svg>
+);

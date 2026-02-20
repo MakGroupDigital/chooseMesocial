@@ -45,7 +45,19 @@ echo "✅ Build Android terminé"
 # 4. Copie de l'APK dans le dossier racine
 echo ""
 echo "📋 Étape 4/4: Copie de l'APK..."
-cp android/app/build/outputs/apk/release/app-release-unsigned.apk ./choose-me-release.apk
+APK_SOURCE=""
+if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+    APK_SOURCE="android/app/build/outputs/apk/release/app-release.apk"
+elif [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+    APK_SOURCE="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+fi
+
+if [ -z "$APK_SOURCE" ]; then
+    echo "❌ APK introuvable après le build"
+    exit 1
+fi
+
+cp "$APK_SOURCE" ./choose-me-release.apk
 
 if [ $? -ne 0 ]; then
     echo "❌ Erreur lors de la copie de l'APK"
@@ -63,11 +75,15 @@ echo "📱 Fichier: choose-me-release.apk"
 echo "📍 Emplacement: $(pwd)/choose-me-release.apk"
 echo "📦 Taille: $(du -h choose-me-release.apk | cut -f1)"
 echo ""
-echo "⚠️  Note: Cet APK n'est pas signé."
-echo "Pour le publier sur le Play Store, vous devez:"
-echo "1. Créer un keystore"
-echo "2. Signer l'APK"
-echo "3. Aligner l'APK avec zipalign"
-echo ""
-echo "Ou utilisez: ./gradlew bundleRelease pour générer un AAB signé"
+if [ "$APK_SOURCE" = "android/app/build/outputs/apk/release/app-release.apk" ]; then
+    echo "🔐 Signature: APK signé (release)"
+else
+    echo "⚠️  Note: Cet APK n'est pas signé."
+    echo "Pour le publier sur le Play Store, vous devez:"
+    echo "1. Créer un keystore"
+    echo "2. Signer l'APK"
+    echo "3. Aligner l'APK avec zipalign"
+    echo ""
+    echo "Ou utilisez: ./gradlew bundleRelease pour générer un AAB signé"
+fi
 echo "=============================================="

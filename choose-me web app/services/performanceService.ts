@@ -88,15 +88,26 @@ export async function uploadPerformanceVideo(
 export async function getUserPerformanceVideos(userId: string): Promise<PerformanceVideo[]> {
   try {
     const db = getFirestore(getFirebaseApp());
-    const performanceRef = collection(db, 'users', userId, 'performances');
-    const snap = await getDocs(performanceRef);
+    const [usersPerfSnap, userPerfSnap, usersPubSnap, userPubSnap] = await Promise.all([
+      getDocs(collection(db, 'users', userId, 'performances')),
+      getDocs(collection(db, 'user', userId, 'performances')),
+      getDocs(collection(db, 'users', userId, 'publication')),
+      getDocs(collection(db, 'user', userId, 'publication'))
+    ]);
 
     const videos: PerformanceVideo[] = [];
-    snap.forEach((doc) => {
-      const data = doc.data() as any;
+    const seen = new Set<string>();
+    const performanceDocs = [...usersPerfSnap.docs, ...userPerfSnap.docs];
+    const publicationDocs = [...usersPubSnap.docs, ...userPubSnap.docs];
+
+    performanceDocs.forEach((docSnap) => {
+      const data = docSnap.data() as any;
+      const key = String(data?.videoUrl || docSnap.id);
+      if (seen.has(key)) return;
+      seen.add(key);
       videos.push({
-        id: doc.id,
-        userId: data.userId,
+        id: docSnap.id,
+        userId: data.userId || userId,
         userName: data.userName,
         userAvatar: data.userAvatar,
         videoUrl: data.videoUrl,
@@ -112,10 +123,43 @@ export async function getUserPerformanceVideos(userId: string): Promise<Performa
       });
     });
 
-    // Trier manuellement par createdAt si nécessaire
+    // Compatibilité avec l'ancienne collection "publication" (Flutter)
+    publicationDocs.forEach((docSnap) => {
+      const data = docSnap.data() as any;
+      const videoUrl = (data?.postVido as string | undefined) ?? (data?.post_vido as string | undefined);
+      if (!videoUrl) return;
+      const key = String(videoUrl || docSnap.id);
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      videos.push({
+        id: `pub_${docSnap.id}`,
+        userId: data.userId || userId,
+        userName: data.nomPoster || data.userName || '',
+        userAvatar: data.post_photo || data.userAvatar || '',
+        videoUrl,
+        thumbnailUrl: data.post_photo || '',
+        caption: data.post_description || '',
+        title: data.title || '',
+        createdAt: data.time_posted || data.createdAt || null,
+        likes: Array.isArray(data.likes) ? data.likes.length : Number(data.likes) || 0,
+        comments: Number(data.num_comments) || 0,
+        shares: Number(data.num_votes) || 0,
+        processed: true,
+        format: 'mp4'
+      });
+    });
+
+    // Trier manuellement par date si nécessaire
     videos.sort((a, b) => {
-      const timeA = a.createdAt?.toMillis?.() || 0;
-      const timeB = b.createdAt?.toMillis?.() || 0;
+      const timeA =
+        a.createdAt?.toMillis?.() ||
+        (typeof a.createdAt?.seconds === 'number' ? a.createdAt.seconds * 1000 : 0) ||
+        (typeof a.createdAt === 'string' ? Date.parse(a.createdAt) || 0 : 0);
+      const timeB =
+        b.createdAt?.toMillis?.() ||
+        (typeof b.createdAt?.seconds === 'number' ? b.createdAt.seconds * 1000 : 0) ||
+        (typeof b.createdAt === 'string' ? Date.parse(b.createdAt) || 0 : 0);
       return timeB - timeA;
     });
 

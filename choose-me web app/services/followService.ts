@@ -11,6 +11,7 @@ import {
   arrayRemove
 } from 'firebase/firestore';
 import { getFirestoreDb } from './firebase';
+import { createAppNotification, getUserIdentity } from './notificationService';
 
 export interface FollowData {
   followerId: string;
@@ -44,6 +45,16 @@ export async function followAthlete(followerId: string, athleteId: string): Prom
       },
       { merge: true }
     );
+
+    const follower = await getUserIdentity(followerId);
+    await createAppNotification({
+      type: 'follow',
+      recipientId: athleteId,
+      actorId: followerId,
+      title: 'Nouvel abonné',
+      body: `${follower.name} suit votre profil.`,
+      data: { followerId }
+    });
   } catch (e) {
     console.error('Erreur lors du suivi de l\'athlète:', e);
     throw e;
