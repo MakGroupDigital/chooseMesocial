@@ -9,6 +9,14 @@ const feedInMemoryCache = new Map<string, { data: FeedPost[]; updatedAt: number 
 const feedInFlightRequests = new Map<string, Promise<FeedPost[]>>();
 const FEED_CACHE_TTL_MS = 1000 * 60 * 3;
 const FEED_SESSION_KEY_PREFIX = 'chooseme:feed:v2:';
+const isDev = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV);
+
+function debugLog(...args: unknown[]): void {
+  if (isDev) {
+    // Logs détaillés seulement en dev pour éviter le bruit en production.
+    console.log(...args);
+  }
+}
 
 function normalizeFollowingUsers(followingUsers?: Set<string>): string[] {
   if (!followingUsers || followingUsers.size === 0) return [];
@@ -154,7 +162,7 @@ export async function fetchVideoFeed(options?: {
       const userInfoPromises = new Map<string, Promise<{ displayName: string; avatarUrl: string }>>();
 
     // ========== SOURCE 1 : PERFORMANCES ==========
-    console.log('📹 Chargement des vidéos depuis performances...');
+    debugLog('📹 Chargement des vidéos depuis performances...');
     try {
       const performancesQuery = query(
         collectionGroup(db, 'performances'),
@@ -214,13 +222,13 @@ export async function fetchVideoFeed(options?: {
         });
       }
 
-      console.log(`✅ ${performancesSnap.size} vidéos chargées depuis performances`);
+      debugLog(`✅ ${performancesSnap.size} vidéos chargées depuis performances`);
     } catch (e) {
       console.warn('⚠️ Erreur chargement performances:', e);
     }
 
     // ========== SOURCE 2 : PUBLICATION (Flutter) ==========
-    console.log('📹 Chargement des vidéos depuis publication...');
+    debugLog('📹 Chargement des vidéos depuis publication...');
     try {
       const publicationQuery = query(
         collectionGroup(db, 'publication'),
@@ -293,13 +301,13 @@ export async function fetchVideoFeed(options?: {
         });
       }
 
-      console.log(`✅ ${publicationSnap.size} vidéos chargées depuis publication`);
+      debugLog(`✅ ${publicationSnap.size} vidéos chargées depuis publication`);
     } catch (e) {
       console.warn('⚠️ Erreur chargement publication:', e);
     }
 
     // Attendre que toutes les infos utilisateur soient chargées EN PARALLÈLE
-    console.log('⏳ Chargement des infos utilisateur...');
+    debugLog('⏳ Chargement des infos utilisateur...');
     const userInfoResults = await Promise.all(userInfoPromises.values());
     const userIds = Array.from(userInfoPromises.keys());
     
@@ -317,7 +325,7 @@ export async function fetchVideoFeed(options?: {
       }
     });
 
-    console.log(`✅ TOTAL: ${allVideos.length} vidéos chargées (performances + publication)`);
+    debugLog(`✅ TOTAL: ${allVideos.length} vidéos chargées (performances + publication)`);
     
     // Appliquer l'algorithme de tri intelligent
     const sortedVideos = sortVideosByAlgorithm(allVideos, options);

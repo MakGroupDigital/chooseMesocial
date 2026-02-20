@@ -1,5 +1,10 @@
 import type { FeedPost } from '../types';
 
+const isDev = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV);
+const debugLog = (...args: unknown[]) => {
+  if (isDev) console.log(...args);
+};
+
 /**
  * Algorithme de recommandation type TikTok
  * Calcule un score pour chaque vidéo basé sur plusieurs critères
@@ -188,7 +193,7 @@ export function sortVideosByAlgorithm(
     }
   }
   
-  console.log('🎯 Algorithme de tri appliqué:', {
+  debugLog('🎯 Algorithme de tri appliqué:', {
     totalVideos: videos.length,
     topVideos: topVideos.length,
     randomVideos: randomVideos.length,
@@ -208,7 +213,7 @@ export function updateVideoScore(
 ): void {
   // Cette fonction peut être utilisée pour tracker les interactions
   // et améliorer l'algorithme au fil du temps
-  console.log('📊 Interaction enregistrée:', {
+  debugLog('📊 Interaction enregistrée:', {
     videoId: video.id,
     userId: video.userId,
     interaction

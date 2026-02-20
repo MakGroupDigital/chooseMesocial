@@ -145,21 +145,27 @@ export async function getUserWallet(userId: string): Promise<WalletData | null> 
 export async function getWalletStats(userId: string): Promise<WalletStats> {
   try {
     const wallet = await getUserWallet(userId);
-    
-    // Récupérer les transactions du mois
+
+    // Récupérer les transactions utilisateur sans contraintes composites
+    // puis filtrer côté client pour éviter les erreurs d'index en dev.
+    const transactionsRef = collection(db, 'transactions');
+    const userTxQuery = query(
+      transactionsRef,
+      where('user_ref', '==', doc(db, 'users', userId))
+    );
+    const allUserTransactionsSnap = await getDocs(userTxQuery);
+
+    // Récupérer les transactions du mois (type credit)
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const transactionsRef = collection(db, 'transactions');
-    const q = query(
-      transactionsRef,
-      where('user_ref', '==', doc(db, 'users', userId)),
-      where('type', '==', 'credit'),
-      where('created_at', '>=', Timestamp.fromDate(startOfMonth))
-    );
-    
-    const snapshot = await getDocs(q);
-    const monthlyEarnings = snapshot.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
+    const monthlyEarnings = allUserTransactionsSnap.docs.reduce((sum, txDoc) => {
+      const data = txDoc.data() as any;
+      const createdAtDate = data.created_at?.toDate ? data.created_at.toDate() : null;
+      if (data.type === 'credit' && createdAtDate && createdAtDate >= startOfMonth) {
+        return sum + (data.amount || 0);
+      }
+      return sum;
+    }, 0);
     
     // Récupérer les stats de pronostics
     const pronosticsRef = collection(db, 'pronostics');
@@ -200,14 +206,21 @@ export async function getTransactionHistory(userId: string, limitCount = 20): Pr
     const transactionsRef = collection(db, 'transactions');
     const q = query(
       transactionsRef,
-      where('user_ref', '==', doc(db, 'users', userId)),
-      orderBy('created_at', 'desc'),
-      limit(limitCount)
+      where('user_ref', '==', doc(db, 'users', userId))
     );
     
     const snapshot = await getDocs(q);
-    
-    return snapshot.docs.map(docData => {
+
+    const sortedDocs = snapshot.docs
+      .slice()
+      .sort((a, b) => {
+        const aDate = a.data().created_at?.toDate ? a.data().created_at.toDate().getTime() : 0;
+        const bDate = b.data().created_at?.toDate ? b.data().created_at.toDate().getTime() : 0;
+        return bDate - aDate;
+      })
+      .slice(0, limitCount);
+
+    return sortedDocs.map(docData => {
       const data = docData.data();
       return {
         id: docData.id,
@@ -235,14 +248,21 @@ export async function getWithdrawalHistory(userId: string, limitCount = 10): Pro
     const withdrawalsRef = collection(db, 'withdrawals');
     const q = query(
       withdrawalsRef,
-      where('user_ref', '==', doc(db, 'users', userId)),
-      orderBy('requested_at', 'desc'),
-      limit(limitCount)
+      where('user_ref', '==', doc(db, 'users', userId))
     );
     
     const snapshot = await getDocs(q);
-    
-    return snapshot.docs.map(docData => {
+
+    const sortedDocs = snapshot.docs
+      .slice()
+      .sort((a, b) => {
+        const aDate = a.data().requested_at?.toDate ? a.data().requested_at.toDate().getTime() : 0;
+        const bDate = b.data().requested_at?.toDate ? b.data().requested_at.toDate().getTime() : 0;
+        return bDate - aDate;
+      })
+      .slice(0, limitCount);
+
+    return sortedDocs.map(docData => {
       const data = docData.data();
       const amount = data.amount || 0;
       return {
