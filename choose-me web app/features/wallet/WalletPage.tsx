@@ -36,7 +36,7 @@ const WalletPage: React.FC = () => {
   const [stats, setStats] = useState<WalletStats | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [withdrawPoints, setWithdrawPoints] = useState('');
   const [withdrawOperator, setWithdrawOperator] = useState('orange_money');
@@ -45,17 +45,60 @@ const WalletPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  useEffect(() => {
-    if (currentUser) {
-      loadWalletData();
+  const toDate = (value: unknown): Date => {
+    if (value instanceof Date) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
     }
-  }, [currentUser]);
+    return new Date();
+  };
 
   useEffect(() => {
-    if (!authLoading && !currentUser) {
-      navigate('/login', { replace: true });
+    if (!currentUser) return;
+
+    // Afficher un état immédiat depuis le cache local pour éviter la sensation de lenteur.
+    try {
+      const cached = window.sessionStorage.getItem(`chooseme:wallet:${currentUser.uid}`);
+      if (cached) {
+        const parsed = JSON.parse(cached) as {
+          wallet?: WalletData | null;
+          stats?: WalletStats | null;
+          transactions?: Transaction[];
+          withdrawals?: Withdrawal[];
+        };
+        if (parsed.wallet) {
+          setWallet({
+            ...parsed.wallet,
+            createdAt: toDate((parsed.wallet as any).createdAt),
+            updatedAt: toDate((parsed.wallet as any).updatedAt)
+          });
+        }
+        if (parsed.stats) setStats(parsed.stats);
+        if (Array.isArray(parsed.transactions)) {
+          setTransactions(
+            parsed.transactions.map((tx) => ({
+              ...tx,
+              createdAt: toDate((tx as any).createdAt)
+            }))
+          );
+        }
+        if (Array.isArray(parsed.withdrawals)) {
+          setWithdrawals(
+            parsed.withdrawals.map((w) => ({
+              ...w,
+              requestedAt: toDate((w as any).requestedAt),
+              processedAt: w.processedAt ? toDate((w as any).processedAt) : undefined
+            }))
+          );
+        }
+      }
+    } catch {
+      // Cache invalide: ignorer silencieusement.
     }
-  }, [authLoading, currentUser, navigate]);
+
+    loadWalletData();
+  }, [currentUser]);
 
   const loadWalletData = async () => {
     if (!currentUser) return;
@@ -74,6 +117,20 @@ const WalletPage: React.FC = () => {
       setStats(statsData);
       setTransactions(txHistory);
       setWithdrawals(withdrawalHistory);
+
+      try {
+        window.sessionStorage.setItem(
+          `chooseme:wallet:${currentUser.uid}`,
+          JSON.stringify({
+            wallet: walletData,
+            stats: statsData,
+            transactions: txHistory,
+            withdrawals: withdrawalHistory
+          })
+        );
+      } catch {
+        // Ignore storage failures.
+      }
     } catch (error) {
       console.error('Erreur chargement wallet:', error);
     } finally {
@@ -163,15 +220,7 @@ const WalletPage: React.FC = () => {
     );
   };
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#208050] border-t-transparent"></div>
-      </div>
-    );
-  }
-
-  if (!currentUser) {
+  if (!authLoading && !currentUser) {
     return (
       <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center p-6">
         <div className="text-center">
@@ -191,14 +240,6 @@ const WalletPage: React.FC = () => {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#208050] border-t-transparent"></div>
-      </div>
-    );
-  }
-
   const currentPoints = wallet?.points || 0;
   const currentUSD = pointsToUSD(currentPoints);
   const canWithdraw = currentPoints >= 1000;
@@ -211,7 +252,10 @@ const WalletPage: React.FC = () => {
             <Wallet className="text-[#19DB8A]" />
             Portefeuille
           </h1>
-          <p className="text-white/40 mt-1">Gérez vos gains et récompenses</p>
+          <p className="text-white/40 mt-1">
+            Gérez vos gains et récompenses
+            {(authLoading || loading) && <span className="ml-2 text-[#19DB8A]">• Chargement...</span>}
+          </p>
         </header>
 
         {/* Success Message */}

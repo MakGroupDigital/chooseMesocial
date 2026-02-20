@@ -38,7 +38,12 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { usePermissions } from './hooks/usePermissions';
 import { applyLanguage, applyTheme, loadAppSettings, SETTINGS_EVENT } from './services/appSettingsService';
 import { ensureBrowserNotificationPermission, listenUserNotifications, notifyBrowser } from './services/notificationService';
-import { ensureUserProfile, getPendingGoogleRedirectUser } from './services/googleAuthService';
+import {
+  clearGoogleRedirectPending,
+  ensureUserProfile,
+  getPendingGoogleRedirectUser,
+  hasGoogleRedirectPending
+} from './services/googleAuthService';
 import { warmVideoFeedCache } from './services/feedService';
 
 const DeviceMockup: React.FC<{ children: React.ReactNode, showNav: boolean, userType?: UserType }> = ({ children, showNav, userType }) => {
@@ -92,8 +97,9 @@ const App: React.FC = () => {
     const handleGoogleRedirect = async () => {
       try {
         const auth = getFirebaseAuth();
+        const redirectPending = hasGoogleRedirectPending();
         const redirectUser = await getPendingGoogleRedirectUser(auth);
-        const fallbackUser = auth.currentUser || (await waitForAuthenticatedUser());
+        const fallbackUser = redirectPending ? (auth.currentUser || (await waitForAuthenticatedUser())) : null;
         const resolvedUser = redirectUser || fallbackUser;
 
         if (!resolvedUser) {
@@ -101,12 +107,14 @@ const App: React.FC = () => {
         }
 
         const { isNewUser } = await ensureUserProfile(resolvedUser);
+        clearGoogleRedirectPending();
         if (!isMounted) {
           return;
         }
 
         navigate(isNewUser ? '/onboarding/type' : '/home', { replace: true });
       } catch (error) {
+        clearGoogleRedirectPending();
         console.error('❌ Erreur finalisation connexion Google:', error);
       }
     };

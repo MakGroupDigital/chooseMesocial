@@ -178,12 +178,6 @@ const MessagesPage: React.FC = () => {
   }, [conversationId]);
 
   useEffect(() => {
-    if (!authLoading && !currentUser) {
-      navigate('/login', { replace: true });
-    }
-  }, [authLoading, currentUser, navigate]);
-
-  useEffect(() => {
     if (!currentUser) return;
     const unsub = listenUserConversations(currentUser.uid, (items) => {
       setConversations(items);
@@ -312,6 +306,32 @@ const MessagesPage: React.FC = () => {
     const openedByRecipient = Boolean(message.armedBy && message.armedBy !== currentUser.uid) || Boolean(message.expiresAt);
     return !openedByRecipient;
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-[#19DB8A] border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A] p-6 text-center">
+          <MessageCircle className="w-12 h-12 text-white/30 mx-auto mb-3" />
+          <p className="text-white font-bold mb-1">Connexion requise</p>
+          <p className="text-white/50 text-sm mb-5">Connectez-vous pour accéder à vos messages.</p>
+          <button
+            onClick={() => navigate('/login')}
+            className="w-full py-3 rounded-xl bg-[#208050] hover:bg-[#208050]/80 text-white font-bold transition-all"
+          >
+            Se connecter
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handlePickMedia = () => {
     fileInputRef.current?.click();

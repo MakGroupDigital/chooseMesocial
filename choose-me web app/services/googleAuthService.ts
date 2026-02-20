@@ -15,6 +15,26 @@ export type GoogleStartResult =
   | { mode: 'popup'; user: User }
   | { mode: 'redirect' };
 
+const GOOGLE_REDIRECT_PENDING_KEY = 'chooseme:google_redirect_pending';
+
+function setGoogleRedirectPending(pending: boolean): void {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+  if (pending) {
+    window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, '1');
+  } else {
+    window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+  }
+}
+
+export function hasGoogleRedirectPending(): boolean {
+  if (typeof window === 'undefined' || !window.sessionStorage) return false;
+  return window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === '1';
+}
+
+export function clearGoogleRedirectPending(): void {
+  setGoogleRedirectPending(false);
+}
+
 function isMobileWeb(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
@@ -31,6 +51,7 @@ export async function startGoogleAuth(auth: Auth): Promise<GoogleStartResult> {
 
   // Mobile web + APK: flux redirect plus fiable que popup (retour système/webview).
   if (isNative || mobileWeb) {
+    setGoogleRedirectPending(true);
     await signInWithRedirect(auth, provider);
     return { mode: 'redirect' };
   }
@@ -38,6 +59,7 @@ export async function startGoogleAuth(auth: Auth): Promise<GoogleStartResult> {
   try {
     // Desktop web: popup d'abord pour une expérience plus rapide.
     const result = await signInWithPopup(auth, provider);
+    setGoogleRedirectPending(false);
     return { mode: 'popup', user: result.user };
   } catch (error: any) {
     // Fallback robuste: redirect uniquement si popup indisponible/bloquée.
@@ -47,6 +69,7 @@ export async function startGoogleAuth(auth: Auth): Promise<GoogleStartResult> {
       error?.code === 'auth/cancelled-popup-request' ||
       error?.code === 'auth/internal-error'
     ) {
+      setGoogleRedirectPending(true);
       await signInWithRedirect(auth, provider);
       return { mode: 'redirect' };
     }
