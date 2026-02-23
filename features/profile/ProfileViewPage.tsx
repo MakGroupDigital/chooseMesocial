@@ -37,7 +37,7 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   // Pour l'instant, on considère que la page affiche toujours le profil connecté
   const viewerType = user.type;
   const isOwnProfile = true;
-  const isRecruiterView = viewerType === UserType.RECRUITER || viewerType === UserType.CLUB;
+  const isRecruiterView = viewerType === UserType.RECRUITER;
   const isPressProfile = user.type === UserType.PRESS;
 
   // Check for missing fields
