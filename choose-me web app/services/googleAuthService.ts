@@ -105,6 +105,7 @@ export async function ensureUserProfile(user: User): Promise<{ isNewUser: boolea
     displayName: user.displayName || user.email?.split('@')[0] || 'Utilisateur',
     photoUrl: user.photoURL || null,
     type: UserType.VISITOR,
+    onboardingCompleted: false,
     statut: 'no',
     etat: 'nv',
     createdAt: serverTimestamp(),

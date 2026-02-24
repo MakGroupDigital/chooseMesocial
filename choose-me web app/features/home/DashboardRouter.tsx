@@ -1,17 +1,13 @@
 import React from 'react';
-import { UserType } from '../../types';
 import HomeChoosePage from './HomeChoosePage';
-import AthleteDashboard from './dashboards/AthleteDashboard';
-import RecruiterDashboard from './dashboards/RecruiterDashboard';
-import ClubDashboard from './dashboards/ClubDashboard';
-import PressDashboard from './dashboards/PressDashboard';
+import { UserType } from '../../types';
 
 interface Props {
   userType: UserType;
 }
 
 const DashboardRouter: React.FC<Props> = ({ userType }) => {
-  // Tous les utilisateurs voient le feed vidéo par défaut
+  // Le feed vidéo reste la page d'accueil pour tous les types de compte.
   return <HomeChoosePage userType={userType} />;
 };
 

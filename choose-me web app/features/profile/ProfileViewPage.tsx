@@ -14,6 +14,44 @@ import { signOut } from 'firebase/auth';
 import { fetchPressArticlesByUser, type ReportageItem } from '../../services/reportageService';
 import { doc, getDoc } from 'firebase/firestore';
 
+const RECRUITER_SUBCATEGORY_LABELS: Record<string, string> = {
+  club: 'Club',
+  manager: 'Manager',
+  agent: 'Agent',
+  academie: 'Académie',
+  scout: 'Scout indépendant'
+};
+
+const RECRUITER_REQUIRED_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
+  club: [
+    { key: 'organizationName', label: 'Nom du club' },
+    { key: 'roleTitle', label: 'Fonction' },
+    { key: 'focusSport', label: 'Sport ciblé' }
+  ],
+  manager: [
+    { key: 'organizationName', label: 'Nom de la structure' },
+    { key: 'roleTitle', label: 'Fonction' },
+    { key: 'focusSport', label: 'Sport ciblé' }
+  ],
+  agent: [
+    { key: 'organizationName', label: 'Nom de l’agence' },
+    { key: 'licenseNumber', label: 'Numéro de licence' },
+    { key: 'focusSport', label: 'Sport ciblé' }
+  ],
+  academie: [
+    { key: 'organizationName', label: 'Nom de l’académie' },
+    { key: 'roleTitle', label: 'Fonction' },
+    { key: 'focusSport', label: 'Sport ciblé' }
+  ],
+  scout: [
+    { key: 'organizationName', label: 'Organisation / Réseau' },
+    { key: 'focusSport', label: 'Sport ciblé' },
+    { key: 'yearsExperience', label: 'Années d’expérience' }
+  ]
+};
+
+type RecruiterVerificationStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
+
 const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const navigate = useNavigate();
   const [insight, setInsight] = useState<string | null>(null);
@@ -26,6 +64,12 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const [loadingVideos, setLoadingVideos] = useState(true);
   const [pressArticles, setPressArticles] = useState<ReportageItem[]>([]);
   const [loadingPressArticles, setLoadingPressArticles] = useState(false);
+  const [recruiterMeta, setRecruiterMeta] = useState<{
+    recruiterSubcategory: string;
+    recruiterProfile: Record<string, any>;
+    verificationStatus: RecruiterVerificationStatus;
+    verificationReason: string;
+  } | null>(null);
   const [pressMeta, setPressMeta] = useState<{
     pressName: string;
     website: string;
@@ -37,8 +81,12 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   // Pour l'instant, on considère que la page affiche toujours le profil connecté
   const viewerType = user.type;
   const isOwnProfile = true;
-  const isRecruiterView = viewerType === UserType.RECRUITER || viewerType === UserType.CLUB;
+  const isRecruiterView = viewerType === UserType.RECRUITER;
+  const isRecruiterProfile = user.type === UserType.RECRUITER;
   const isPressProfile = user.type === UserType.PRESS;
+  const recruiterVerificationStatus: RecruiterVerificationStatus =
+    recruiterMeta?.verificationStatus || 'not_submitted';
+  const recruiterNeedsVerification = isRecruiterProfile && recruiterVerificationStatus !== 'approved';
 
   // Check for missing fields
   const missingFields = [];
@@ -46,6 +94,21 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   if (user.type === UserType.ATHLETE) {
     if (!user.sport || user.sport.trim() === '') missingFields.push('Sport');
     if (!user.position || user.position.trim() === '') missingFields.push('Poste');
+  }
+  if (isRecruiterProfile) {
+    const subcategory = recruiterMeta?.recruiterSubcategory || '';
+    if (!subcategory) {
+      missingFields.push('Sous-catégorie recruteur');
+    } else {
+      const recruiterProfile = recruiterMeta?.recruiterProfile || {};
+      const requiredFields = RECRUITER_REQUIRED_FIELDS[subcategory] || [];
+      requiredFields.forEach((field) => {
+        const value = String(recruiterProfile[field.key] || '').trim();
+        if (!value) {
+          missingFields.push(field.label);
+        }
+      });
+    }
   }
   if (!user.avatarUrl || user.avatarUrl.trim() === '') missingFields.push('Photo de profil');
   
@@ -55,6 +118,8 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
     position: user.position,
     avatarUrl: user.avatarUrl,
     type: user.type,
+    recruiterSubcategory: recruiterMeta?.recruiterSubcategory,
+    recruiterVerificationStatus,
     missingFields
   });
 
@@ -67,6 +132,37 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
     };
     if (user.type === UserType.ATHLETE) loadInsight();
   }, [user]);
+
+  useEffect(() => {
+    let active = true;
+    const loadRecruiterMeta = async () => {
+      if (!isRecruiterProfile) {
+        setRecruiterMeta(null);
+        return;
+      }
+      try {
+        const db = getFirestoreDb();
+        const usersSnap = await getDoc(doc(db, 'users', user.uid));
+        const legacySnap = await getDoc(doc(db, 'user', user.uid));
+        const data = usersSnap.exists() ? usersSnap.data() : legacySnap.data();
+        if (!active) return;
+        setRecruiterMeta({
+          recruiterSubcategory: String(data?.recruiterSubcategory || ''),
+          recruiterProfile: (data?.recruiterProfile || {}) as Record<string, any>,
+          verificationStatus:
+            (data?.recruiterVerificationRequest?.status as RecruiterVerificationStatus) || 'not_submitted',
+          verificationReason: String(data?.recruiterVerificationRequest?.reason || '')
+        });
+      } catch {
+        if (!active) return;
+        setRecruiterMeta(null);
+      }
+    };
+    void loadRecruiterMeta();
+    return () => {
+      active = false;
+    };
+  }, [isRecruiterProfile, user.uid]);
 
   // Charger les statistiques de suivi
   useEffect(() => {
@@ -95,7 +191,7 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
       }
     };
     loadFollowStats();
-  }, [user.uid]);
+  }, [user.uid, user.type, user.displayName]);
 
   // Charger les vidéos de performance automatiquement
   useEffect(() => {
@@ -223,12 +319,51 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
               <p className="text-[#FF8A3C] text-sm font-semibold mb-1">Complétez votre profil</p>
               <p className="text-white/60 text-xs">Informations manquantes: {missingFields.join(', ')}</p>
               <button 
-                onClick={() => navigate('/profile/edit')}
+                onClick={() => navigate(isRecruiterProfile && missingFields.includes('Sous-catégorie recruteur') ? '/onboarding/type' : '/profile/edit')}
                 className="text-[#FF8A3C] text-xs font-bold mt-2 hover:underline"
               >
                 Compléter maintenant →
               </button>
             </div>
+          </div>
+        )}
+
+        {isRecruiterProfile && isOwnProfile && (
+          <div
+            className={`rounded-2xl p-4 mb-6 border ${
+              recruiterVerificationStatus === 'approved'
+                ? 'bg-[#19DB8A]/10 border-[#19DB8A]/35'
+                : recruiterVerificationStatus === 'pending'
+                  ? 'bg-[#208050]/10 border-[#208050]/35'
+                  : recruiterVerificationStatus === 'rejected'
+                    ? 'bg-red-500/10 border-red-500/35'
+                    : 'bg-[#FF8A3C]/10 border-[#FF8A3C]/35'
+            }`}
+          >
+            <p className="text-white font-semibold text-sm">
+              {recruiterVerificationStatus === 'approved' && 'Profil recruteur vérifié'}
+              {recruiterVerificationStatus === 'pending' && 'Vérification recruteur en cours'}
+              {recruiterVerificationStatus === 'rejected' && 'Vérification recruteur refusée'}
+              {recruiterVerificationStatus === 'not_submitted' && 'Vérification recruteur requise'}
+            </p>
+            <p className="text-white/70 text-xs mt-1">
+              {recruiterVerificationStatus === 'approved' &&
+                'Votre compte est validé. Vous pouvez continuer à utiliser la plateforme normalement.'}
+              {recruiterVerificationStatus === 'pending' &&
+                'Votre dossier est en traitement. Vous recevrez la réponse ici dès validation.'}
+              {recruiterVerificationStatus === 'rejected' &&
+                `Votre dossier doit être complété${recruiterMeta?.verificationReason ? `: ${recruiterMeta.verificationReason}` : '.'}`}
+              {recruiterVerificationStatus === 'not_submitted' &&
+                'Ajoutez les informations et documents de votre catégorie pour continuer à utiliser les services recruteur.'}
+            </p>
+            {recruiterVerificationStatus !== 'approved' && (
+              <button
+                onClick={() => navigate('/settings/verify-recruiter')}
+                className="text-[#19DB8A] text-xs font-bold mt-2 hover:underline"
+              >
+                {recruiterVerificationStatus === 'pending' ? 'Mettre à jour mon dossier' : 'Vérifier mon profil recruteur'}
+              </button>
+            )}
           </div>
         )}
 
@@ -254,6 +389,11 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
           {isPressProfile && (
             <p className="mt-1 text-[#19DB8A] text-sm font-semibold">
               {pressMeta?.pressName || user.displayName || 'Presse'}
+            </p>
+          )}
+          {isRecruiterProfile && (
+            <p className="mt-1 text-[#19DB8A] text-sm font-semibold">
+              {RECRUITER_SUBCATEGORY_LABELS[recruiterMeta?.recruiterSubcategory || ''] || 'Sous-catégorie recruteur non définie'}
             </p>
           )}
           <div className="flex items-center gap-1 text-white/40 text-sm mt-1">
@@ -336,7 +476,7 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
            </div>
         )}
 
-        {!isPressProfile && (
+        {user.type === UserType.ATHLETE && (
           <div className="grid grid-cols-3 gap-3 mb-10">
             <StatCard
               icon={<Activity size={18} />}
@@ -363,7 +503,7 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
         <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 mb-8">
           <h3 className="text-lg font-bold text-white mb-4">{isPressProfile ? 'Informations média' : 'Informations'}</h3>
           <div className="space-y-4">
-            {!isPressProfile && (
+            {user.type === UserType.ATHLETE && (
               <>
                 <InfoRow
                   label="Sport"
@@ -385,6 +525,27 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
                   value={user.weight ? `${user.weight} kg` : 'Non défini'}
                   isEmpty={!user.weight}
                 />
+              </>
+            )}
+            {isRecruiterProfile && (
+              <>
+                <InfoRow
+                  label="Sous-catégorie recruteur"
+                  value={RECRUITER_SUBCATEGORY_LABELS[recruiterMeta?.recruiterSubcategory || ''] || 'Non définie'}
+                  isEmpty={!recruiterMeta?.recruiterSubcategory}
+                />
+                {(RECRUITER_REQUIRED_FIELDS[recruiterMeta?.recruiterSubcategory || ''] || []).map((field) => {
+                  const rawValue = recruiterMeta?.recruiterProfile?.[field.key];
+                  const value = String(rawValue || '').trim();
+                  return (
+                    <InfoRow
+                      key={field.key}
+                      label={field.label}
+                      value={value || 'Non défini'}
+                      isEmpty={!value}
+                    />
+                  );
+                })}
               </>
             )}
             {isPressProfile && (
@@ -436,114 +597,124 @@ const ProfileViewPage: React.FC<{ user: UserProfile }> = ({ user }) => {
           </div>
           {isOwnProfile && missingFields.length > 0 && (
             <button 
-              onClick={() => navigate('/profile/edit')}
+              onClick={() => navigate(isRecruiterProfile && missingFields.includes('Sous-catégorie recruteur') ? '/onboarding/type' : '/profile/edit')}
               className="w-full mt-6 py-3 bg-[#19DB8A] text-black font-bold rounded-2xl hover:bg-[#19DB8A]/90 transition-colors"
             >
               Compléter les informations
             </button>
           )}
+          {isOwnProfile && recruiterNeedsVerification && (
+            <button
+              onClick={() => navigate('/settings/verify-recruiter')}
+              className="w-full mt-3 py-3 bg-[#0A0A0A] border border-[#19DB8A]/40 text-[#19DB8A] font-bold rounded-2xl hover:bg-[#19DB8A]/10 transition-colors"
+            >
+              Finaliser la vérification recruteur
+            </button>
+          )}
         </div>
 
-        {/* Performance Videos */}
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold font-readex">{isPressProfile ? 'Articles' : 'Performances'}</h3>
-            {isOwnProfile && (
-              <button 
-                onClick={() => navigate(isPressProfile ? '/create-press-content' : '/create-content')}
-                className="text-[#19DB8A] text-xs font-bold uppercase tracking-widest flex items-center gap-1 hover:text-[#19DB8A]/80"
-              >
-                <Plus size={16} /> {isPressProfile ? 'Ajouter article' : 'Ajouter'}
-              </button>
-            )}
-          </div>
-
-          {(isPressProfile ? loadingPressArticles : loadingVideos) ? (
-            <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-12 flex flex-col items-center justify-center">
-              {/* Logo Choose Me en chargement - rogné en cercle */}
-              <div className="relative w-24 h-24 mb-4 rounded-full overflow-hidden bg-white/5 border-4 border-[#19DB8A]/30 shadow-xl">
-                <img 
-                  src="/assets/images/app_launcher_icon.png" 
-                  alt="Choose Me" 
-                  className="w-full h-full object-cover animate-pulse"
-                />
-              </div>
-              <p className="text-white/60 text-sm">{isPressProfile ? 'Chargement des articles...' : 'Chargement des vidéos...'}</p>
-            </div>
-          ) : (isPressProfile ? pressArticles.length === 0 : performanceVideos.length === 0) ? (
-            <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-12 flex flex-col items-center justify-center text-center">
-              <Activity size={48} className="text-white/20 mb-4" />
-              <p className="text-white/60 text-sm mb-2">
-                {isPressProfile ? 'Aucun article publié pour le moment' : 'Aucune vidéo de performance pour le moment'}
-              </p>
-              <p className="text-white/40 text-xs">
-                {isPressProfile ? 'Les articles photo et vidéo apparaîtront ici' : 'Les vidéos de performance apparaîtront ici'}
-              </p>
-              {isOwnProfile && !isPressProfile && user.type === UserType.ATHLETE && (
+        {/* Performance / Press Content */}
+        {(user.type === UserType.ATHLETE || isPressProfile) && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold font-readex">{isPressProfile ? 'Articles' : 'Performances'}</h3>
+              {isOwnProfile && (
                 <button 
-                  onClick={() => navigate('/create-content')}
-                  className="mt-4 px-4 py-2 bg-[#19DB8A] text-black font-bold rounded-lg hover:bg-[#19DB8A]/90 text-sm"
+                  onClick={() => navigate(isPressProfile ? '/create-press-content' : '/create-content')}
+                  className="text-[#19DB8A] text-xs font-bold uppercase tracking-widest flex items-center gap-1 hover:text-[#19DB8A]/80"
                 >
-                  Ajouter une vidéo
+                  <Plus size={16} /> {isPressProfile ? 'Ajouter article' : 'Ajouter'}
                 </button>
               )}
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              {isPressProfile
-                ? pressArticles.map((article) => (
-                    <div key={article.id} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
-                      {article.mediaType === 'video' ? (
+
+            {(isPressProfile ? loadingPressArticles : loadingVideos) ? (
+              <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-12 flex flex-col items-center justify-center">
+                {/* Logo Choose Me en chargement - rogné en cercle */}
+                <div className="relative w-24 h-24 mb-4 rounded-full overflow-hidden bg-white/5 border-4 border-[#19DB8A]/30 shadow-xl">
+                  <img 
+                    src="/assets/images/app_launcher_icon.png" 
+                    alt="Choose Me" 
+                    className="w-full h-full object-cover animate-pulse"
+                  />
+                </div>
+                <p className="text-white/60 text-sm">{isPressProfile ? 'Chargement des articles...' : 'Chargement des vidéos...'}</p>
+              </div>
+            ) : (isPressProfile ? pressArticles.length === 0 : performanceVideos.length === 0) ? (
+              <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-12 flex flex-col items-center justify-center text-center">
+                <Activity size={48} className="text-white/20 mb-4" />
+                <p className="text-white/60 text-sm mb-2">
+                  {isPressProfile ? 'Aucun article publié pour le moment' : 'Aucune vidéo de performance pour le moment'}
+                </p>
+                <p className="text-white/40 text-xs">
+                  {isPressProfile ? 'Les articles photo et vidéo apparaîtront ici' : 'Les vidéos de performance apparaîtront ici'}
+                </p>
+                {isOwnProfile && !isPressProfile && user.type === UserType.ATHLETE && (
+                  <button 
+                    onClick={() => navigate('/create-content')}
+                    className="mt-4 px-4 py-2 bg-[#19DB8A] text-black font-bold rounded-lg hover:bg-[#19DB8A]/90 text-sm"
+                  >
+                    Ajouter une vidéo
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                {isPressProfile
+                  ? pressArticles.map((article) => (
+                      <div key={article.id} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
+                        {article.mediaType === 'video' ? (
+                          <CustomVideoPlayer
+                            src={article.mediaUrl}
+                            caption={article.title}
+                            title={article.title}
+                            description={article.detail}
+                            hashtags={['ChooseMe', 'Presse', 'Article']}
+                            className="w-full h-full"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex flex-col">
+                            <img src={article.mediaUrl} alt={article.title} className="w-full h-[72%] object-cover" />
+                            <div className="px-3 py-2">
+                              <p className="text-white text-xs font-semibold line-clamp-2">{article.title}</p>
+                              <p className="text-white/50 text-[10px] mt-1 line-clamp-2">{article.detail || 'Article presse'}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  : performanceVideos.map((video, idx) => (
+                      <div key={idx} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
                         <CustomVideoPlayer
-                          src={article.mediaUrl}
-                          caption={article.title}
-                          title={article.title}
-                          description={article.detail}
-                          hashtags={['ChooseMe', 'Presse', 'Article']}
+                          src={video.videoUrl}
+                          poster={video.thumbnailUrl}
+                          caption={video.caption}
+                          isHD={video.processed}
+                          videoId={video.id}
+                          userId={video.userId}
+                          title={video.caption || `Vidéo de ${user.displayName}`}
+                          description={`Performance de ${user.displayName} - ${user.sport || 'Sport'} ${user.position ? `(${user.position})` : ''}`}
+                          hashtags={[
+                            'ChooseMe',
+                            user.sport?.replace(/\s+/g, '') || 'Sport',
+                            user.country?.replace(/\s+/g, '') || '',
+                            'Performance',
+                            'Talent'
+                          ].filter(Boolean)}
+                          onShare={async () => {
+                            if (video.id && video.userId) {
+                              const { incrementVideoShares } = await import('../../services/performanceService');
+                              await incrementVideoShares(video.userId, video.id);
+                            }
+                          }}
                           className="w-full h-full"
                         />
-                      ) : (
-                        <div className="w-full h-full flex flex-col">
-                          <img src={article.mediaUrl} alt={article.title} className="w-full h-[72%] object-cover" />
-                          <div className="px-3 py-2">
-                            <p className="text-white text-xs font-semibold line-clamp-2">{article.title}</p>
-                            <p className="text-white/50 text-[10px] mt-1 line-clamp-2">{article.detail || 'Article presse'}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                : performanceVideos.map((video, idx) => (
-                    <div key={idx} className="aspect-[4/5] bg-[#0A0A0A] rounded-3xl border border-white/5 overflow-hidden shadow-lg">
-                      <CustomVideoPlayer
-                        src={video.videoUrl}
-                        poster={video.thumbnailUrl}
-                        caption={video.caption}
-                        isHD={video.processed}
-                        videoId={video.id}
-                        userId={video.userId}
-                        title={video.caption || `Vidéo de ${user.displayName}`}
-                        description={`Performance de ${user.displayName} - ${user.sport || 'Sport'} ${user.position ? `(${user.position})` : ''}`}
-                        hashtags={[
-                          'ChooseMe',
-                          user.sport?.replace(/\s+/g, '') || 'Sport',
-                          user.country?.replace(/\s+/g, '') || '',
-                          'Performance',
-                          'Talent'
-                        ].filter(Boolean)}
-                        onShare={async () => {
-                          if (video.id && video.userId) {
-                            const { incrementVideoShares } = await import('../../services/performanceService');
-                            await incrementVideoShares(video.userId, video.id);
-                          }
-                        }}
-                        className="w-full h-full"
-                      />
-                    </div>
-                  ))}
-            </div>
-          )}
-        </div>
+                      </div>
+                    ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Bouton de déconnexion en bas de page */}
         {isOwnProfile && (

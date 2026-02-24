@@ -11,9 +11,46 @@ import { SPORTS_POSITIONS, MAJOR_CITIES } from '../../utils/sportsData';
 import { getPhoneCountries } from '../../utils/phoneCountries';
 import { getCitiesByCountry } from '../../services/cityService';
 
+const RECRUITER_SUBCATEGORY_LABELS: Record<string, string> = {
+  club: 'Club',
+  manager: 'Manager',
+  agent: 'Agent',
+  academie: 'Académie',
+  scout: 'Scout indépendant'
+};
+
+const RECRUITER_REQUIRED_FIELDS: Record<string, Array<{ key: string; label: string; placeholder: string }>> = {
+  club: [
+    { key: 'organizationName', label: 'Nom du club', placeholder: 'Ex: AS Dakar FC' },
+    { key: 'roleTitle', label: 'Fonction', placeholder: 'Ex: Directeur sportif' },
+    { key: 'focusSport', label: 'Sport ciblé', placeholder: 'Ex: Football' }
+  ],
+  manager: [
+    { key: 'organizationName', label: 'Nom de la structure', placeholder: 'Ex: Talent Management Group' },
+    { key: 'roleTitle', label: 'Fonction', placeholder: 'Ex: Manager sportif' },
+    { key: 'focusSport', label: 'Sport ciblé', placeholder: 'Ex: Basketball' }
+  ],
+  agent: [
+    { key: 'organizationName', label: 'Nom de l’agence', placeholder: 'Ex: Elite Agency' },
+    { key: 'licenseNumber', label: 'Numéro de licence', placeholder: 'Ex: LIC-2026-0044' },
+    { key: 'focusSport', label: 'Sport ciblé', placeholder: 'Ex: Football' }
+  ],
+  academie: [
+    { key: 'organizationName', label: 'Nom de l’académie', placeholder: 'Ex: Académie des Talents' },
+    { key: 'roleTitle', label: 'Fonction', placeholder: 'Ex: Responsable détection' },
+    { key: 'focusSport', label: 'Sport ciblé', placeholder: 'Ex: Athlétisme' }
+  ],
+  scout: [
+    { key: 'organizationName', label: 'Organisation / Réseau', placeholder: 'Ex: Scout Pro Network' },
+    { key: 'focusSport', label: 'Sport ciblé', placeholder: 'Ex: Football' },
+    { key: 'yearsExperience', label: 'Années d’expérience', placeholder: 'Ex: 6' }
+  ]
+};
+
 const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const navigate = useNavigate();
   const isAthleteAccount = user.type === UserType.ATHLETE;
+  const isRecruiterAccount = user.type === UserType.RECRUITER;
   const [name, setName] = useState(user.displayName || '');
   const [country, setCountry] = useState(user.country || '');
   const [city, setCity] = useState('');
@@ -38,6 +75,14 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const [loadingCities, setLoadingCities] = useState(false);
   const [showPositionDropdown, setShowPositionDropdown] = useState(false);
   const [positionSearch, setPositionSearch] = useState('');
+  const [recruiterSubcategory, setRecruiterSubcategory] = useState('');
+  const [recruiterProfile, setRecruiterProfile] = useState<Record<string, string>>({
+    organizationName: '',
+    roleTitle: '',
+    focusSport: '',
+    licenseNumber: '',
+    yearsExperience: ''
+  });
 
   // Get phone countries
   const phoneCountries = getPhoneCountries();
@@ -57,6 +102,8 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
   const filteredCountries = phoneCountries.filter(c =>
     c.name.toLowerCase().includes(countrySearch.toLowerCase())
   );
+
+  const recruiterRequiredFields = RECRUITER_REQUIRED_FIELDS[recruiterSubcategory] || [];
 
   useEffect(() => {
     let active = true;
@@ -78,6 +125,38 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
       active = false;
     };
   }, [country]);
+
+  useEffect(() => {
+    let active = true;
+    const loadRecruiterData = async () => {
+      if (!isRecruiterAccount) return;
+      try {
+        const auth = getFirebaseAuth();
+        const currentUser = auth.currentUser;
+        if (!currentUser?.uid) return;
+        const db = getFirestoreDb();
+        const snap = await getDoc(doc(db, 'users', currentUser.uid));
+        const data = snap.data() as any;
+        if (!active || !data) return;
+        setRecruiterSubcategory(String(data.recruiterSubcategory || ''));
+        const profile = (data.recruiterProfile || {}) as Record<string, any>;
+        setRecruiterProfile((prev) => ({
+          ...prev,
+          organizationName: String(profile.organizationName || ''),
+          roleTitle: String(profile.roleTitle || ''),
+          focusSport: String(profile.focusSport || ''),
+          licenseNumber: String(profile.licenseNumber || ''),
+          yearsExperience: String(profile.yearsExperience || '')
+        }));
+      } catch (e) {
+        console.error('Erreur chargement profil recruteur:', e);
+      }
+    };
+    void loadRecruiterData();
+    return () => {
+      active = false;
+    };
+  }, [isRecruiterAccount]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -113,6 +192,18 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
     if (!country) {
       setError('Le pays est requis');
       return;
+    }
+    if (isRecruiterAccount) {
+      if (!recruiterSubcategory) {
+        setError('Veuillez d’abord définir votre sous-catégorie recruteur.');
+        return;
+      }
+      for (const field of recruiterRequiredFields) {
+        if (!String(recruiterProfile[field.key] || '').trim()) {
+          setError(`Le champ "${field.label}" est requis`);
+          return;
+        }
+      }
     }
 
     setSaving(true);
@@ -169,6 +260,13 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
             assists: assists ? parseInt(assists) : 0,
           };
         }
+      }
+      if (isRecruiterAccount) {
+        updateData.recruiterSubcategory = recruiterSubcategory;
+        updateData.recruiterProfile = {
+          ...(recruiterProfile || {}),
+          updatedAt: new Date().toISOString()
+        };
       }
 
       // Utiliser setDoc + merge pour créer le document s'il n'existe pas encore.
@@ -453,6 +551,39 @@ const ProfileEditPage: React.FC<{ user: UserProfile }> = ({ user }) => {
                 </div>
               </div>
             </div>
+          </>
+        )}
+
+        {isRecruiterAccount && (
+          <>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">Sous-catégorie recruteur</label>
+              <div className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white/80">
+                {RECRUITER_SUBCATEGORY_LABELS[recruiterSubcategory] || 'Non définie'}
+              </div>
+              {!recruiterSubcategory && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/onboarding/type')}
+                  className="text-[#FF8A3C] text-xs font-bold hover:underline"
+                >
+                  Définir ma sous-catégorie maintenant
+                </button>
+              )}
+            </div>
+
+            {recruiterRequiredFields.map((field) => (
+              <div key={field.key} className="space-y-2">
+                <label className="text-xs font-bold text-white/30 uppercase tracking-widest ml-1">{field.label} *</label>
+                <input
+                  type="text"
+                  value={recruiterProfile[field.key] || ''}
+                  onChange={(e) => setRecruiterProfile((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                  placeholder={field.placeholder}
+                  className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-[#19DB8A]"
+                />
+              </div>
+            ))}
           </>
         )}
       </div>

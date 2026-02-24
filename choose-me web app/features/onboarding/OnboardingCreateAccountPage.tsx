@@ -7,7 +7,7 @@ import { UserType } from '../../types';
 import { getFirebaseAuth, getFirestoreDb } from '../../services/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { getPhoneCountries, Country } from '../../utils/phoneCountries';
+import { getPhoneCountries } from '../../utils/phoneCountries';
 import { ensureUserProfile, startGoogleAuth } from '../../services/googleAuthService';
 
 interface Props {
@@ -54,6 +54,7 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
       phoneNumber: formData.phone.trim(),
       pays: formData.country,
       type: UserType.VISITOR, // Type temporaire, sera défini après choix du profil
+      onboardingCompleted: false,
       statut: 'no',
       etat: 'nv',
       photoUrl: photoUrl,
