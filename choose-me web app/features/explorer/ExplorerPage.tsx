@@ -54,7 +54,7 @@ const ExplorerPage: React.FC<{ userType: UserType }> = ({ userType }) => {
   const [comments, setComments] = useState<PostComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const isScout = userType === UserType.RECRUITER || userType === UserType.CLUB;
+  const isScout = userType === UserType.RECRUITER;
   const navigate = useNavigate();
   const likeStorageKey = `chooseme:reportageLikes:${currentUser?.uid || 'guest'}`;
 

@@ -1,7 +1,6 @@
 import '/core/flutter_flow/flutter_flow_util.dart';
 import '/features/live_match/services/thesportsdb_api_service.dart';
 import '/features/live_match/services/match_sync_service.dart';
-import '/core/backend/backend.dart';
 import 'matches_list_widget.dart' show MatchesListWidget;
 import 'dart:async';
 import 'package:flutter/material.dart';
