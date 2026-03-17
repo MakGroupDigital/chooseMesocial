@@ -80,25 +80,42 @@ const ModernOnboardingPage: React.FC = () => {
       onTouchEnd={onTouchEnd}
     >
       <div
-        className="absolute inset-0 transition-all duration-700 ease-in-out"
+        className="absolute inset-0 transition-all duration-700 ease-in-out pointer-events-none"
         style={{
           backgroundImage: `url(${step.image})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center'
         }}
       >
-        <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/62 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/62 to-transparent pointer-events-none" />
       </div>
 
       <div className="absolute top-4 left-0 right-0 px-5 z-10 flex items-center justify-between">
-        <div className="bg-black/45 border border-white/10 rounded-full px-3 py-1.5">
+        <div className="bg-black/45 border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20">
+            <img
+              src="/assets/images/Sans_titre-4.png"
+              alt="ChooseMe logo"
+              className="w-full h-full object-cover"
+            />
+          </div>
           <p className="text-white text-xs font-bold tracking-wider">
             CHOOSE<span className="text-[#19DB8A]">-ME</span>
           </p>
         </div>
         <button
-          onClick={() => navigate('/login')}
-          className="text-white/80 text-sm font-semibold h-9 px-3 rounded-full bg-black/45 border border-white/10"
+          onClick={() => {
+            console.log('🔄 Bouton Passer cliqué - Navigation vers /login');
+            navigate('/login');
+            // Fallback pour HashRouter
+            setTimeout(() => {
+              if (!window.location.hash.includes('/login')) {
+                window.location.hash = '/login';
+              }
+            }, 100);
+          }}
+          className="text-white/80 text-sm font-semibold h-9 px-3 rounded-full bg-black/45 border border-white/10 hover:bg-black/60 hover:border-white/20 transition-all duration-200 active:scale-95 relative z-50 hover:bg-black/60 hover:scale-105 active:scale-95 cursor-pointer"
+          style={{ position: 'relative', zIndex: 1000 }}
         >
           Passer
         </button>
@@ -164,7 +181,16 @@ const ModernOnboardingPage: React.FC = () => {
             </Button>
           </div>
 
-          <Button variant="ghost" onClick={() => navigate('/login')} className="w-full h-10">
+          <Button variant="ghost" onClick={() => {
+            console.log('🔄 Bouton Connexion cliqué - Navigation vers /login');
+            navigate('/login');
+            // Fallback pour HashRouter
+            setTimeout(() => {
+              if (!window.location.hash.includes('/login')) {
+                window.location.hash = '/login';
+              }
+            }, 100);
+          }} className="w-full h-10">
             Deja un compte ? Connexion
           </Button>
 
