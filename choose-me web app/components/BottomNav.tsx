@@ -15,7 +15,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
     ];
 
     // Explorer context changes by role
-    if (userType === UserType.RECRUITER) {
+    if (userType === UserType.RECRUITER || userType === UserType.CLUB) {
       items.push({ icon: <IconNews />, label: 'Talents', path: '/explorer' });
     } else {
       items.push({ icon: <IconNews />, label: 'Actu', path: '/explorer' });
@@ -25,18 +25,13 @@ const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
     if (userType === UserType.ATHLETE || userType === UserType.PRESS) {
       items.push({ 
         icon: <IconPerf />,
-        label: userType === UserType.ATHLETE ? 'Perfs' : 'Article',
-        path: userType === UserType.ATHLETE ? '/create-content' : '/create-press-content'
+        label: userType === UserType.ATHLETE ? 'Perfs' : 'Publier', 
+        path: '/create-content' 
       });
     }
 
     items.push({ icon: <IconLive />, label: 'Live', path: '/live-match' });
-
-    // Les visiteurs n'ont pas l'onglet messages
-    if (userType !== UserType.VISITOR) {
-      items.push({ icon: <IconMessage />, label: 'Messages', path: '/messages' });
-    }
-
+    items.push({ icon: <IconMessage />, label: 'Messages', path: '/messages' });
     items.push({ icon: <IconWallet />, label: 'Wallet', path: '/wallet' });
     items.push({ icon: <IconProfile />, label: 'Profil', path: '/profile' });
 

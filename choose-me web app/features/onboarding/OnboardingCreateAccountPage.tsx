@@ -1,14 +1,14 @@
 
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, Phone, Globe, ChevronLeft, Search, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, Phone, Globe, ChevronLeft, Search } from 'lucide-react';
 import Button from '../../components/Button';
 import { UserType } from '../../types';
 import { getFirebaseAuth, getFirestoreDb } from '../../services/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { getPhoneCountries } from '../../utils/phoneCountries';
-import { ensureUserProfile, startGoogleAuth } from '../../services/googleAuthService';
+import { getPhoneCountries, Country } from '../../utils/phoneCountries';
+import { startGoogleAuth } from '../../services/googleAuthService';
 
 interface Props {
   selectedType?: UserType | null;
@@ -27,8 +27,6 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
 
@@ -53,13 +51,14 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
       displayName: displayName.trim(),
       phoneNumber: formData.phone.trim(),
       pays: formData.country,
-      type: UserType.VISITOR, // Type temporaire, sera défini après choix du profil
-      onboardingCompleted: false,
-      statut: 'no',
-      etat: 'nv',
-      photoUrl: photoUrl,
+      ...(selectedType ? { type: selectedType } : {}),
+      needsProfileType: !selectedType,
+      statut: selectedType === UserType.VISITOR ? 'ok' : 'no',
+      etat: selectedType === UserType.VISITOR ? 'ac' : 'nv',
+      avatarUrl: photoUrl || '',
+      photoUrl: photoUrl || '',
       createdAt: serverTimestamp()
-    });
+    }, { merge: true });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -87,8 +86,7 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
       const uid = cred.user.uid;
       await createUserProfile(uid, formData.email, formData.name);
       
-      // Rediriger vers le choix du profil
-      navigate('/onboarding/type');
+      navigate(selectedType ? '/home' : '/onboarding/type');
     } catch (err: any) {
       const message =
         err?.code === 'auth/email-already-in-use'
@@ -104,26 +102,21 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
     setError(null);
     setLoading(true);
     try {
-      const auth = getFirebaseAuth();
-      const authResult = await startGoogleAuth(auth);
-
-      if (authResult.mode === 'redirect') {
-        return;
-      }
-
-      const { isNewUser } = await ensureUserProfile(authResult.user);
-      navigate(isNewUser ? '/onboarding/type' : '/home');
+      await startGoogleAuth('signup');
+      navigate('/home');
     } catch (err: any) {
       console.error('❌ Erreur inscription Google:', err);
-      let errorMessage = 'Impossible de créer un compte avec Google.';
-      if (err?.code === 'auth/operation-not-supported-in-this-environment') {
-        errorMessage = 'Google Sign-In non supporté dans cet environnement.';
-      } else if (err?.code === 'auth/unauthorized-domain') {
-        errorMessage = 'Domaine non autorisé pour Google Sign-In.';
-      } else if (err?.code === 'auth/network-request-failed') {
-        errorMessage = 'Erreur réseau. Vérifiez votre connexion Internet.';
-      }
-      setError(errorMessage);
+      const message =
+        err?.code === 'auth/unauthorized-domain'
+          ? 'Domaine non autorisé. Contactez l’administrateur.'
+          : err?.code === 'auth/operation-not-allowed'
+            ? 'Google Auth n’est pas activé dans Firebase.'
+            : err?.code === 'auth/popup-blocked'
+              ? 'La fenêtre Google a été bloquée. Autorisez les popups pour ce site.'
+              : err?.code === 'auth/popup-closed-by-user'
+                ? 'Inscription Google annulée.'
+                : 'Impossible de créer un compte avec Google.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -239,44 +232,13 @@ const OnboardingCreateAccountPage: React.FC<Props> = ({ selectedType }) => {
           <div className="relative">
             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" size={18} />
             <input
-              type={showPassword ? 'text' : 'password'}
+              type="password"
               required
               placeholder="••••••••"
-              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl py-4 pl-12 pr-12 text-white focus:outline-none focus:border-[#19DB8A]"
+              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-[#19DB8A]"
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             />
-            <button
-              type="button"
-              aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-              onClick={() => setShowPassword((prev) => !prev)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
-            >
-              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-white/50 ml-1 uppercase text-[10px] tracking-widest">Confirmer le mot de passe</label>
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" size={18} />
-            <input
-              type={showConfirmPassword ? 'text' : 'password'}
-              required
-              placeholder="••••••••"
-              className="w-full bg-[#0A0A0A] border border-white/5 rounded-2xl py-4 pl-12 pr-12 text-white focus:outline-none focus:border-[#19DB8A]"
-              value={formData.confirmPassword}
-              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-            />
-            <button
-              type="button"
-              aria-label={showConfirmPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-              onClick={() => setShowConfirmPassword((prev) => !prev)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
-            >
-              {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
           </div>
         </div>
 

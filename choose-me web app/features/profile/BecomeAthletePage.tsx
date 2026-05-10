@@ -102,7 +102,6 @@ const BecomeAthletePage: React.FC = () => {
         doc(db, 'users', currentUser.uid),
         {
           type: UserType.ATHLETE,
-          onboardingCompleted: true,
           sport: form.sport,
           position: form.position,
           country: form.country,

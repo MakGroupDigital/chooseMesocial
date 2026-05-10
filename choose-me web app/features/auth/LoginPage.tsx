@@ -1,29 +1,25 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/Button';
-import { Mail, Lock, LogIn, ChevronLeft, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, LogIn, ChevronLeft } from 'lucide-react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirebaseAuth } from '../../services/firebase';
-import { ensureUserProfile, startGoogleAuth } from '../../services/googleAuthService';
+import { startGoogleAuth } from '../../services/googleAuthService';
 
 const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const goToRegister = () => {
-    navigate('/onboarding/register');
-    // Fallback mobile/webview si la navigation React ne s'applique pas immédiatement.
-    setTimeout(() => {
-      if (!window.location.hash.includes('/onboarding/register')) {
-        window.location.hash = '/onboarding/register';
-      }
-    }, 0);
-  };
+  useEffect(() => {
+    const googleError = sessionStorage.getItem('chooseMe.googleAuthError');
+    if (!googleError) return;
+    sessionStorage.removeItem('chooseMe.googleAuthError');
+    setError(googleError);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,34 +41,29 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async (mode: 'login' | 'signup' = 'login') => {
     setLoading(true);
     setError(null);
     try {
-      const auth = getFirebaseAuth();
-      const authResult = await startGoogleAuth(auth);
-
-      if (authResult.mode === 'redirect') {
-        return;
-      }
-
-      const { isNewUser } = await ensureUserProfile(authResult.user);
+      await startGoogleAuth(mode);
       onLogin();
-      navigate(isNewUser ? '/onboarding/type' : '/home');
+      navigate('/home');
     } catch (err: any) {
+      console.error('❌ Erreur connexion Google:', err);
+      console.error('Code erreur:', err.code);
+      console.error('Message:', err.message);
+      
       let errorMessage = 'Impossible de vous connecter avec Google.';
-      if (err.code === 'auth/popup-blocked') {
-        errorMessage = 'La popup a été bloquée. Autorisez les popups pour ce site.';
-      } else if (err.code === 'auth/popup-closed-by-user') {
-        errorMessage = 'Connexion annulée.';
-      } else if (err.code === 'auth/unauthorized-domain') {
+      if (err.code === 'auth/unauthorized-domain') {
         errorMessage = 'Domaine non autorisé. Contactez l\'administrateur.';
-      } else if (err.code === 'auth/operation-not-supported-in-this-environment') {
-        errorMessage = 'Google Sign-In non supporté dans cet environnement.';
-      } else if (err.code === 'auth/invalid-api-key') {
-        errorMessage = 'Configuration Firebase invalide (API Key).';
-      } else if (err.code === 'auth/network-request-failed') {
-        errorMessage = 'Erreur réseau. Vérifiez votre connexion Internet.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        errorMessage = 'Google Auth n’est pas activé dans Firebase.';
+      } else if (err.code === 'auth/popup-blocked') {
+        errorMessage = 'La fenêtre Google a été bloquée. Autorisez les popups pour ce site.';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Connexion Google annulée.';
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        errorMessage = 'Une fenêtre Google est déjà ouverte.';
       }
       
       setError(errorMessage);
@@ -128,21 +119,13 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" size={20} />
               <input
-                type={showPassword ? 'text' : 'password'}
+                type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-[#0A0A0A] border border-white/10 rounded-2xl py-4 pl-12 pr-12 text-white focus:outline-none focus:border-[#19DB8A] transition-colors"
+                className="w-full bg-[#0A0A0A] border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-[#19DB8A] transition-colors"
               />
-              <button
-                type="button"
-                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-                onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
             </div>
           </div>
 
@@ -168,7 +151,7 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
             type="button" 
             variant="ghost" 
             disabled={loading} 
-            onClick={handleGoogleLogin}
+            onClick={() => handleGoogleLogin('login')}
             className="w-full py-4 text-lg border border-white/10"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -183,7 +166,7 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
 
         <div className="mt-8 text-center text-white/40 text-sm">
           Pas encore membre ?{' '}
-          <button onClick={goToRegister} className="text-[#19DB8A] font-bold hover:underline">
+          <button onClick={() => handleGoogleLogin('signup')} disabled={loading} className="text-[#19DB8A] font-bold hover:underline disabled:opacity-50">
             S'inscrire gratuitement
           </button>
         </div>

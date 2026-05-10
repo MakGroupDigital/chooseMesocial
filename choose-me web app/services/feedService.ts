@@ -5,97 +5,109 @@ import { sortVideosByAlgorithm } from './feedAlgorithm';
 
 // Cache pour les infos utilisateur
 const userCache = new Map<string, { displayName: string; avatarUrl: string }>();
-const feedInMemoryCache = new Map<string, { data: FeedPost[]; updatedAt: number }>();
-const feedInFlightRequests = new Map<string, Promise<FeedPost[]>>();
-const FEED_CACHE_TTL_MS = 1000 * 60 * 3;
-const FEED_SESSION_KEY_PREFIX = 'chooseme:feed:v2:';
-const isDev = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV);
 
-function debugLog(...args: unknown[]): void {
-  if (isDev) {
-    // Logs détaillés seulement en dev pour éviter le bruit en production.
-    console.log(...args);
+const VIDEO_URL_FIELDS = [
+  'cloudinaryUrl',
+  'cloudinaryVideoUrl',
+  'secure_url',
+  'secureUrl',
+  'videoUrl',
+  'video_url',
+  'video',
+  'postVido',
+  'post_vido',
+  'postVideo',
+  'post_video',
+  'mediaUrl',
+  'media_url',
+  'fileUrl',
+  'file_url',
+  'url'
+];
+
+const THUMBNAIL_FIELDS = [
+  'thumbnailUrl',
+  'thumbnail_url',
+  'thumbnail',
+  'posterUrl',
+  'poster_url',
+  'poster',
+  'post_photo'
+];
+
+const isPlayableVideoUrl = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false;
+
+  const url = value.trim();
+  if (!/^https?:\/\//i.test(url)) return false;
+
+  const lowerUrl = url.toLowerCase();
+  return (
+    lowerUrl.includes('res.cloudinary.com') ||
+    lowerUrl.includes('/video/upload/') ||
+    lowerUrl.includes('firebasestorage.googleapis.com') ||
+    /\.(mp4|webm|mov|m4v|ogg)(\?|#|$)/i.test(lowerUrl)
+  );
+};
+
+const findUrlInValue = (value: unknown, preferCloudinary: boolean): string | null => {
+  if (isPlayableVideoUrl(value)) {
+    const url = value.trim();
+    if (!preferCloudinary || url.includes('res.cloudinary.com')) return url;
   }
-}
 
-function normalizeFollowingUsers(followingUsers?: Set<string>): string[] {
-  if (!followingUsers || followingUsers.size === 0) return [];
-  return Array.from(followingUsers).sort();
-}
+  if (!value || typeof value !== 'object') return null;
 
-function buildFeedCacheKey(options?: {
-  userId?: string;
-  followingUsers?: Set<string>;
-}): string {
-  const userId = options?.userId || 'guest';
-  const following = normalizeFollowingUsers(options?.followingUsers).join(',');
-  return `${userId}::${following}`;
-}
+  const values = Array.isArray(value) ? value : Object.values(value);
+  const fallbackUrls: string[] = [];
 
-function getSessionStorageKey(cacheKey: string): string {
-  return `${FEED_SESSION_KEY_PREFIX}${cacheKey}`;
-}
-
-function saveFeedToCache(cacheKey: string, data: FeedPost[]): void {
-  const payload = { data, updatedAt: Date.now() };
-  feedInMemoryCache.set(cacheKey, payload);
-
-  try {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      window.sessionStorage.setItem(getSessionStorageKey(cacheKey), JSON.stringify(payload));
+  for (const item of values) {
+    if (isPlayableVideoUrl(item)) {
+      const url = item.trim();
+      if (url.includes('res.cloudinary.com')) return url;
+      fallbackUrls.push(url);
+      continue;
     }
-  } catch {
-    // Ignore sessionStorage failures (private mode / quota).
-  }
-}
 
-function readFeedFromCache(cacheKey: string): { data: FeedPost[]; isFresh: boolean } | null {
-  const now = Date.now();
-  const inMemory = feedInMemoryCache.get(cacheKey);
-  if (inMemory) {
-    return { data: inMemory.data, isFresh: now - inMemory.updatedAt < FEED_CACHE_TTL_MS };
-  }
-
-  try {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      const raw = window.sessionStorage.getItem(getSessionStorageKey(cacheKey));
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { data?: FeedPost[]; updatedAt?: number };
-      if (!Array.isArray(parsed?.data) || typeof parsed?.updatedAt !== 'number') return null;
-      feedInMemoryCache.set(cacheKey, { data: parsed.data, updatedAt: parsed.updatedAt });
-      return { data: parsed.data, isFresh: now - parsed.updatedAt < FEED_CACHE_TTL_MS };
+    if (item && typeof item === 'object') {
+      const nested = findUrlInValue(item, preferCloudinary);
+      if (nested) return nested;
     }
-  } catch {
-    // Ignore broken cache payload.
   }
 
-  return null;
-}
+  return preferCloudinary ? fallbackUrls[0] || null : null;
+};
 
-export function getCachedVideoFeed(options?: {
-  userId?: string;
-  followingUsers?: Set<string>;
-}): FeedPost[] {
-  const cacheKey = buildFeedCacheKey(options);
-  const cached = readFeedFromCache(cacheKey);
-  return cached?.data || [];
-}
+const getVideoUrl = (data: Record<string, any>): string => {
+  const directCandidates = VIDEO_URL_FIELDS
+    .map((field) => data[field])
+    .filter((value) => typeof value === 'string' && value.trim()) as string[];
 
-export function warmVideoFeedCache(options?: {
-  userId?: string;
-  followingUsers?: Set<string>;
-}): Promise<FeedPost[]> {
-  return fetchVideoFeed({ ...options, forceRefresh: false });
-}
+  const cloudinaryCandidate = directCandidates.find((url) => url.includes('res.cloudinary.com'));
+  if (cloudinaryCandidate && isPlayableVideoUrl(cloudinaryCandidate)) {
+    return cloudinaryCandidate.trim();
+  }
+
+  for (const value of directCandidates) {
+    if (isPlayableVideoUrl(value)) return value.trim();
+  }
+
+  return findUrlInValue(data, true) || '';
+};
+
+const getThumbnailUrl = (data: Record<string, any>, fallback = ''): string => {
+  for (const field of THUMBNAIL_FIELDS) {
+    const value = data[field];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+
+  return fallback;
+};
 
 /**
  * Récupère les infos utilisateur avec cache
  */
 async function getUserInfo(userId: string, db: any): Promise<{ displayName: string; avatarUrl: string }> {
-  if (userCache.has(userId)) {
-    return userCache.get(userId)!;
-  }
-
   try {
     const userDoc = await getDoc(doc(db, 'users', userId));
     if (userDoc.exists()) {
@@ -114,6 +126,7 @@ async function getUserInfo(userId: string, db: any): Promise<{ displayName: stri
           userData.avatarUrl ||
           userData.photoUrl ||
           userData.photo_url ||
+          userData.avatar_url ||
           userData.post_photo ||
           userData.photo ||
           ''
@@ -140,29 +153,15 @@ export async function fetchVideoFeed(options?: {
   userId?: string;
   followingUsers?: Set<string>;
   recentlySeenVideos?: Set<string>;
-  forceRefresh?: boolean;
 }): Promise<FeedPost[]> {
-  const cacheKey = buildFeedCacheKey(options);
-  const cached = readFeedFromCache(cacheKey);
-
-  if (!options?.forceRefresh && cached?.isFresh && cached.data.length > 0) {
-    return cached.data;
-  }
-
-  const existingRequest = feedInFlightRequests.get(cacheKey);
-  if (existingRequest) {
-    return existingRequest;
-  }
-
   const db = getFirestoreDb();
 
-  const requestPromise = (async () => {
-    try {
-      const allVideos: FeedPost[] = [];
-      const userInfoPromises = new Map<string, Promise<{ displayName: string; avatarUrl: string }>>();
+  try {
+    const allVideos: FeedPost[] = [];
+    const userInfoPromises = new Map<string, Promise<{ displayName: string; avatarUrl: string }>>();
 
     // ========== SOURCE 1 : PERFORMANCES ==========
-    debugLog('📹 Chargement des vidéos depuis performances...');
+    console.log('📹 Chargement des vidéos depuis performances...');
     try {
       const performancesQuery = query(
         collectionGroup(db, 'performances'),
@@ -173,7 +172,7 @@ export async function fetchVideoFeed(options?: {
       for (const docSnap of performancesSnap.docs) {
         const data = docSnap.data() as any;
 
-        const videoUrl = data.videoUrl?.trim();
+        const videoUrl = getVideoUrl(data);
         if (!videoUrl) continue;
 
         // Récupérer l'ID utilisateur depuis le chemin
@@ -211,7 +210,7 @@ export async function fetchVideoFeed(options?: {
             '',
           type: 'video',
           url: videoUrl,
-          thumbnail: data.thumbnailUrl || '/assets/images/app_launcher_icon.png',
+          thumbnail: getThumbnailUrl(data, '/assets/images/app_launcher_icon.png'),
           caption: data.caption || data.description || '',
           likes: data.likes || 0,
           shares: data.shares || 0,
@@ -222,13 +221,13 @@ export async function fetchVideoFeed(options?: {
         });
       }
 
-      debugLog(`✅ ${performancesSnap.size} vidéos chargées depuis performances`);
+      console.log(`✅ ${performancesSnap.size} vidéos chargées depuis performances`);
     } catch (e) {
       console.warn('⚠️ Erreur chargement performances:', e);
     }
 
     // ========== SOURCE 2 : PUBLICATION (Flutter) ==========
-    debugLog('📹 Chargement des vidéos depuis publication...');
+    console.log('📹 Chargement des vidéos depuis publication...');
     try {
       const publicationQuery = query(
         collectionGroup(db, 'publication'),
@@ -239,8 +238,7 @@ export async function fetchVideoFeed(options?: {
       for (const docSnap of publicationSnap.docs) {
         const data = docSnap.data() as any;
 
-        const rawUrl = (data.postVido as string | undefined) ?? (data.post_vido as string | undefined);
-        const videoUrl = rawUrl?.trim();
+        const videoUrl = getVideoUrl(data);
         if (!videoUrl) continue;
 
         // Récupérer l'ID utilisateur depuis le chemin
@@ -290,7 +288,7 @@ export async function fetchVideoFeed(options?: {
             '',
           type: 'video',
           url: videoUrl,
-          thumbnail: data.post_photo || '',
+          thumbnail: getThumbnailUrl(data, data.post_photo || ''),
           caption: data.post_description || '',
           likes: Array.isArray(data.likes) ? data.likes.length : 0,
           shares: data.num_votes ?? 0,
@@ -301,13 +299,13 @@ export async function fetchVideoFeed(options?: {
         });
       }
 
-      debugLog(`✅ ${publicationSnap.size} vidéos chargées depuis publication`);
+      console.log(`✅ ${publicationSnap.size} vidéos chargées depuis publication`);
     } catch (e) {
       console.warn('⚠️ Erreur chargement publication:', e);
     }
 
     // Attendre que toutes les infos utilisateur soient chargées EN PARALLÈLE
-    debugLog('⏳ Chargement des infos utilisateur...');
+    console.log('⏳ Chargement des infos utilisateur...');
     const userInfoResults = await Promise.all(userInfoPromises.values());
     const userIds = Array.from(userInfoPromises.keys());
     
@@ -316,29 +314,24 @@ export async function fetchVideoFeed(options?: {
       const userIndex = userIds.indexOf(video.userId);
       if (userIndex !== -1 && userInfoResults[userIndex]) {
         const userInfo = userInfoResults[userIndex];
-        // Conserver d'abord les infos du document vidéo, puis compléter depuis users/{id}.
+        // L'avatar du profil doit être la source de vérité: les documents vidéo
+        // peuvent garder une ancienne copie Firebase Storage.
         video.userName = video.userName || userInfo.displayName || 'Talent';
-        video.userAvatar = video.userAvatar || userInfo.avatarUrl || '/assets/images/app_launcher_icon.png';
+        video.userAvatar = userInfo.avatarUrl || video.userAvatar || '/assets/images/app_launcher_icon.png';
       } else {
         video.userName = video.userName || 'Talent';
         video.userAvatar = video.userAvatar || '/assets/images/app_launcher_icon.png';
       }
     });
 
-    debugLog(`✅ TOTAL: ${allVideos.length} vidéos chargées (performances + publication)`);
+    console.log(`✅ TOTAL: ${allVideos.length} vidéos chargées (performances + publication)`);
     
     // Appliquer l'algorithme de tri intelligent
     const sortedVideos = sortVideosByAlgorithm(allVideos, options);
-    saveFeedToCache(cacheKey, sortedVideos);
+    
     return sortedVideos;
-    } catch (e) {
-      console.error('❌ Erreur chargement vidéos:', e);
-      return cached?.data || [];
-    }
-  })().finally(() => {
-    feedInFlightRequests.delete(cacheKey);
-  });
-
-  feedInFlightRequests.set(cacheKey, requestPromise);
-  return requestPromise;
+  } catch (e) {
+    console.error('❌ Erreur chargement vidéos:', e);
+    return [];
+  }
 }
