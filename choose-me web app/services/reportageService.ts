@@ -100,12 +100,14 @@ interface CloudinaryDirectUploadPayload {
   duration?: number;
   width?: number;
   height?: number;
+  done?: boolean;
   error?: { message?: string } | string;
 }
 
 type CloudinarySignPayload = CloudinarySignedUpload | { error?: string; detail?: string } | null;
 
 const SERVER_UPLOAD_LIMIT_BYTES = 3.5 * 1024 * 1024;
+const VIDEO_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
 
 const countLikes = (value: unknown): number => {
   if (Array.isArray(value)) return value.length;
@@ -263,6 +265,11 @@ async function getCloudinarySignedUpload(userId: string, resourceType: 'image' |
 async function uploadPressMediaDirectly(file: File, userId: string): Promise<PressMediaUploadResult> {
   const resourceType = isVideoFile(file) ? 'video' : 'image';
   const signedUpload = await getCloudinarySignedUpload(userId, resourceType);
+
+  if (resourceType === 'video') {
+    return uploadPressVideoInChunks(file, signedUpload);
+  }
+
   const formData = new FormData();
 
   formData.append('file', file, file.name || `${resourceType}.${resourceType === 'video' ? 'mp4' : 'jpg'}`);
@@ -302,6 +309,77 @@ async function uploadPressMediaDirectly(file: File, userId: string): Promise<Pre
     duration: payload.duration,
     width: payload.width,
     height: payload.height
+  };
+}
+
+async function postCloudinaryChunk(
+  file: File,
+  signedUpload: CloudinarySignedUpload,
+  uploadId: string,
+  start: number,
+  end: number
+): Promise<CloudinaryDirectUploadPayload> {
+  const formData = new FormData();
+  const chunk = file.slice(start, end + 1, file.type || 'video/mp4');
+
+  formData.append('file', chunk, file.name || 'performance.mp4');
+  formData.append('api_key', signedUpload.apiKey);
+  formData.append('timestamp', String(signedUpload.timestamp));
+  formData.append('signature', signedUpload.signature);
+  formData.append('folder', signedUpload.folder);
+  formData.append('public_id', signedUpload.publicId);
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${signedUpload.cloudName}/video/upload`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Range': `bytes ${start}-${end}/${file.size}`,
+        'X-Unique-Upload-Id': uploadId
+      },
+      body: formData
+    }
+  );
+  const payload = await response.json().catch(() => null) as CloudinaryDirectUploadPayload | null;
+
+  if (!response.ok || !payload) {
+    throw new Error(formatCloudinaryDirectError(payload, 'Impossible d’uploader la vidéo sur Cloudinary.'));
+  }
+
+  return payload;
+}
+
+async function uploadPressVideoInChunks(file: File, signedUpload: CloudinarySignedUpload): Promise<PressMediaUploadResult> {
+  const uploadId = `${signedUpload.publicId}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  let finalPayload: CloudinaryDirectUploadPayload | null = null;
+
+  for (let start = 0; start < file.size; start += VIDEO_CHUNK_SIZE_BYTES) {
+    const end = Math.min(start + VIDEO_CHUNK_SIZE_BYTES, file.size) - 1;
+    const payload = await postCloudinaryChunk(file, signedUpload, uploadId, start, end);
+    finalPayload = payload;
+  }
+
+  if (!finalPayload?.secure_url) {
+    throw new Error(formatCloudinaryDirectError(finalPayload, 'Impossible de finaliser l’upload vidéo sur Cloudinary.'));
+  }
+
+  const publicId = finalPayload.public_id || `${signedUpload.folder}/${signedUpload.publicId}`;
+  const thumbnailUrl = getCloudinaryTransformedUrl(signedUpload.cloudName, 'video', publicId);
+
+  return {
+    provider: 'cloudinary',
+    mediaUrl: finalPayload.secure_url,
+    videoUrl: finalPayload.secure_url,
+    imageUrl: '',
+    secureUrl: finalPayload.secure_url,
+    thumbnailUrl,
+    publicId,
+    resourceType: 'video',
+    format: finalPayload.format,
+    bytes: finalPayload.bytes,
+    duration: finalPayload.duration,
+    width: finalPayload.width,
+    height: finalPayload.height
   };
 }
 
