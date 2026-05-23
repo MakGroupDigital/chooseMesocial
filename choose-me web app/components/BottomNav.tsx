@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { FilePlus2 } from 'lucide-react';
+import { FilePlus2, ShieldCheck } from 'lucide-react';
 import { UserType } from '../types';
 import { IconFeed, IconNews, IconPerf, IconLive, IconWallet, IconProfile, IconMessage } from './Icons';
 
@@ -19,6 +19,20 @@ type NavItem = {
 
 const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
   const getNavItems = (): NavItem[] => {
+    if (userType === UserType.ADMIN) {
+      return [
+        { icon: <IconFeed />, label: 'Feed', path: '/home' },
+        { icon: <IconNews />, label: 'Actu', path: '/explorer' },
+        { icon: <IconPerf />, label: 'Perfs', path: '/create-content', variant: 'publish', compact: true },
+        { icon: <FilePlus2 />, label: 'Presse', path: '/dashboard/press', variant: 'publish', compact: true },
+        { icon: <IconLive />, label: 'Live', path: '/live-match', variant: 'live', compact: true },
+        { icon: <IconMessage />, label: 'Messages', path: '/messages' },
+        { icon: <IconWallet />, label: 'Wallet', path: '/wallet' },
+        { icon: <ShieldCheck />, label: 'Admin', path: '/admin' },
+        { icon: <IconProfile />, label: 'Profil', path: '/profile' }
+      ];
+    }
+
     if (userType === UserType.PRESS) {
       return [
         { icon: <IconFeed />, label: 'Feed', path: '/home' },

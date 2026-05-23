@@ -301,13 +301,14 @@ const App: React.FC = () => {
   if (loading) return <SplashPage />;
 
   const hideNavOn = ['/onboarding', '/login', '/onboarding/type', '/onboarding/register', '/splash', '/create-content', '/video-description', '/record-performance', '/settings', '/settings/become-athlete'];
-  const hideNavByPrefix: string[] = ['/admin'];
+  const hideNavByPrefix: string[] = [];
   const showNav =
     Boolean(user) &&
     !hideNavOn.includes(location.pathname) &&
     !hideNavByPrefix.some((prefix) => location.pathname.startsWith(prefix)) &&
     location.pathname !== '/' &&
     !feedClearView;
+  const navigationUserType = user && isAdminProfile(user) ? UserType.ADMIN : user?.type;
 
   const RequireAuth: React.FC<{ children: React.ReactNode; allowIncompleteProfile?: boolean }> = ({ children, allowIncompleteProfile = false }) => {
     if (!user) return <Navigate to="/login" replace />;
@@ -322,7 +323,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <DeviceMockup showNav={showNav} userType={user?.type}>
+    <DeviceMockup showNav={showNav} userType={navigationUserType}>
       {currentPermission && (
         <PermissionModal
           isOpen={isModalOpen}
@@ -347,7 +348,7 @@ const App: React.FC = () => {
         <Route path="/dashboard/press" element={<RequireAuth>{user ? <PressDashboard user={user} /> : null}</RequireAuth>} />
         <Route path="/explorer" element={<RequireAuth><ExplorerPage userType={user?.type || UserType.VISITOR} /></RequireAuth>} />
         <Route path="/explorer/reportage/:id" element={<ReportageDetailPage />} />
-        <Route path="/create-content" element={<RequireAuth>{user?.type === UserType.PRESS ? <Navigate to="/dashboard/press" replace /> : <CreateContentPage userType={user?.type || UserType.VISITOR} />}</RequireAuth>} />
+        <Route path="/create-content" element={<RequireAuth>{!isAdminProfile(user) && user?.type === UserType.PRESS ? <Navigate to="/dashboard/press" replace /> : <CreateContentPage userType={navigationUserType || UserType.VISITOR} />}</RequireAuth>} />
         <Route path="/video-description" element={<RequireAuth><VideoDescriptionPage /></RequireAuth>} />
         <Route path="/record-performance" element={<RequireAuth><PerformanceRecordingPage userType={user?.type || UserType.VISITOR} /></RequireAuth>} />
         <Route path="/live-match" element={<LiveMatchesPage />} />
