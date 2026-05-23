@@ -53,7 +53,18 @@ export interface PostComment {
   userAvatar?: string;
   text: string;
   createdAt: string;
-   likes: number;
+  likes: number;
+  replies?: PostCommentReply[];
+  replyCount?: number;
+}
+
+export interface PostCommentReply {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  text: string;
+  createdAt: string;
 }
 
 export interface NewsArticle {

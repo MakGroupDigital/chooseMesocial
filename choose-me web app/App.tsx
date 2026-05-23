@@ -43,8 +43,8 @@ import { ensureBrowserNotificationPermission, listenUserNotifications, notifyBro
 
 const DeviceMockup: React.FC<{ children: React.ReactNode, showNav: boolean, userType?: UserType }> = ({ children, showNav, userType }) => {
   return (
-    <div className="h-[100dvh] bg-[#050505] flex flex-col font-sans overflow-hidden">
-      <div className={`flex-1 min-h-0 overflow-y-auto relative custom-scrollbar bg-[#050505] ${showNav ? 'pb-24' : ''}`}>
+    <div className="relative h-[100dvh] bg-[#050505] flex flex-col font-sans overflow-hidden">
+      <div className={`flex-1 min-h-0 overflow-y-auto relative custom-scrollbar bg-[#050505] ${showNav ? 'pb-32' : ''}`}>
         {children}
       </div>
       {showNav && <BottomNav userType={userType || UserType.ATHLETE} />}
@@ -56,6 +56,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [selectedOnboardingType, setSelectedOnboardingType] = useState<UserType | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [feedClearView, setFeedClearView] = useState(false);
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const location = useLocation();
   const { isModalOpen, currentPermission, handleAllow, handleDeny } = usePermissions();
@@ -209,6 +210,24 @@ const App: React.FC = () => {
     return () => unsub();
   }, [user?.uid]);
 
+  useEffect(() => {
+    const handleFeedClearView = (event: Event) => {
+      const customEvent = event as CustomEvent<{ hidden?: boolean }>;
+      setFeedClearView(Boolean(customEvent.detail?.hidden));
+    };
+
+    window.addEventListener('chooseme:feed-clear-view', handleFeedClearView as EventListener);
+    return () => {
+      window.removeEventListener('chooseme:feed-clear-view', handleFeedClearView as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (location.pathname !== '/home') {
+      setFeedClearView(false);
+    }
+  }, [location.pathname]);
+
   const handleSelectType = (type: UserType) => {
     // utilisé temporairement pendant l'onboarding avant création du compte Firebase
     setSelectedOnboardingType(type);
@@ -225,7 +244,8 @@ const App: React.FC = () => {
   const showNav =
     !hideNavOn.includes(location.pathname) &&
     !hideNavByPrefix.some((prefix) => location.pathname.startsWith(prefix)) &&
-    location.pathname !== '/';
+    location.pathname !== '/' &&
+    !feedClearView;
 
   return (
     <DeviceMockup showNav={showNav} userType={user?.type}>

@@ -1,5 +1,6 @@
 import { getFirebaseApp } from './firebase';
 import { getFirestore, collection, addDoc, serverTimestamp, getDocs, onSnapshot, doc, updateDoc, increment, deleteDoc, getDoc } from 'firebase/firestore';
+import { normalizeEngagementCount } from '../utils/engagement';
 
 export interface PerformanceVideo {
   id?: string;
@@ -33,6 +34,18 @@ interface CloudinaryUploadResult {
   width?: number;
   height?: number;
 }
+
+const COMMENT_COUNT_FIELDS = [
+  'num_comments',
+  'comments',
+  'commentCount',
+  'comment_count',
+  'commentsCount',
+  'numComments'
+];
+
+const getCommentCount = (data: Record<string, any>): number =>
+  Math.max(...COMMENT_COUNT_FIELDS.map((field) => normalizeEngagementCount(data[field])));
 
 async function uploadVideoToCloudinary(userId: string, videoBlob: Blob): Promise<CloudinaryUploadResult> {
   const formData = new FormData();
@@ -107,6 +120,7 @@ export async function uploadPerformanceVideo(
       createdAt: serverTimestamp(),
       likes: 0,
       comments: 0,
+      num_comments: 0,
       shares: 0,
       userName,
       userAvatar: userAvatar || '',
@@ -159,9 +173,9 @@ export async function getUserPerformanceVideos(userId: string): Promise<Performa
         caption: data.caption,
         title: data.title,
         createdAt: data.createdAt,
-        likes: data.likes || 0,
-        comments: data.comments || 0,
-        shares: data.shares || 0,
+        likes: normalizeEngagementCount(data.likes),
+        comments: getCommentCount(data),
+        shares: normalizeEngagementCount(data.shares),
         processed: data.processed || false,
         format: data.format || 'webm',
         cloudinaryPublicId: data.cloudinaryPublicId || data.publicId || '',
@@ -210,9 +224,9 @@ export function listenToPerformanceVideos(
             caption: data.caption,
             title: data.title,
             createdAt: data.createdAt,
-            likes: data.likes || 0,
-            comments: data.comments || 0,
-            shares: data.shares || 0,
+            likes: normalizeEngagementCount(data.likes),
+            comments: getCommentCount(data),
+            shares: normalizeEngagementCount(data.shares),
             processed: data.processed || false,
             format: data.format || 'webm',
             cloudinaryPublicId: data.cloudinaryPublicId || data.publicId || '',
@@ -295,7 +309,8 @@ export async function incrementVideoComments(userId: string, videoId: string): P
     const videoRef = doc(db, 'users', userId, 'performances', videoId);
     
     await updateDoc(videoRef, {
-      comments: increment(1)
+      comments: increment(1),
+      num_comments: increment(1)
     });
     
     console.log('✅ Compteur de commentaires incrémenté pour la vidéo:', videoId);
