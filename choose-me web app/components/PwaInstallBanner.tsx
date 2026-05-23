@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, CheckCircle2, Download, Smartphone, X } from 'lucide-react';
+import { ArrowRight, Bell, CheckCircle2, Download, Home, MoreVertical, Share2, Smartphone, X } from 'lucide-react';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -63,11 +63,15 @@ const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ hasBottomNav = fals
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
+    if (isIOS) {
+      setShowFallback(true);
+    }
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
-  }, []);
+  }, [isIOS]);
 
   const requestNotifications = async () => {
     if (!('Notification' in window) || Notification.permission !== 'default') return;
@@ -83,6 +87,12 @@ const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ hasBottomNav = fals
   const installApp = async () => {
     setIsInstalling(true);
     setShowFallback(false);
+
+    if (isIOS) {
+      setShowFallback(true);
+      setIsInstalling(false);
+      return;
+    }
 
     if (!installPrompt) {
       await requestNotifications();
@@ -155,12 +165,12 @@ const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ hasBottomNav = fals
               {isInstalling ? (
                 <>
                   <Download className="h-4 w-4 animate-bounce" />
-                  Téléchargement...
+                  Ouverture...
                 </>
               ) : (
                 <>
                   <Download className="h-4 w-4" />
-                  Installer l’app
+                  {isIOS ? "Installer sur iPhone" : "Installer l’app"}
                 </>
               )}
             </button>
@@ -176,14 +186,32 @@ const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ hasBottomNav = fals
           </div>
 
           {showFallback && (
-            <div className="mt-4 rounded-2xl border border-white/10 bg-white/10 p-4 text-sm leading-relaxed text-white/78">
-              {isIOS ? (
-                <p>Sur iPhone, ouvrez le menu Partager de Safari, puis choisissez “Ajouter à l’écran d’accueil”.</p>
-              ) : (
-                <p>
-                  Si la fenêtre d’installation ne s’affiche pas, ouvrez le menu du navigateur puis choisissez “Installer l’app” ou “Ajouter à l’écran d’accueil”.
-                </p>
-              )}
+            <div className="mt-4 rounded-2xl border border-[#19DB8A]/25 bg-[#19DB8A]/[0.07] p-4 text-sm leading-relaxed text-white/82">
+              <p className="font-semibold text-white">
+                Cliquez sur le bouton avec 3 points en haut à droite de votre navigateur, ensuite cliquez sur Partager, choisissez Ajouter à l’écran d’accueil et confirmez.
+              </p>
+
+              <div className="custom-scrollbar mt-4 flex items-center gap-2 overflow-x-auto pb-1">
+                <div className="min-w-[92px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+                  <MoreVertical className="mx-auto h-5 w-5 text-[#19DB8A]" />
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/70">3 points</p>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-[#19DB8A]" />
+                <div className="min-w-[92px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+                  <Share2 className="mx-auto h-5 w-5 text-[#19DB8A]" />
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/70">Partager</p>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-[#19DB8A]" />
+                <div className="min-w-[112px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+                  <Home className="mx-auto h-5 w-5 text-[#19DB8A]" />
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/70">Écran d’accueil</p>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-[#19DB8A]" />
+                <div className="min-w-[92px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+                  <CheckCircle2 className="mx-auto h-5 w-5 text-[#19DB8A]" />
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/70">Confirmer</p>
+                </div>
+              </div>
             </div>
           )}
         </div>

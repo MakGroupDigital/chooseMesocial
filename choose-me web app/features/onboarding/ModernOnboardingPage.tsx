@@ -52,6 +52,11 @@ const ModernOnboardingPage: React.FC = () => {
     navigate('/onboarding/type');
   };
 
+  const skipOnboarding = (event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.stopPropagation();
+    navigate('/onboarding/type');
+  };
+
   const goPrev = () => {
     setCurrentStep((prev) => Math.max(0, prev - 1));
   };
@@ -97,7 +102,8 @@ const ModernOnboardingPage: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => navigate('/login')}
+          type="button"
+          onClick={skipOnboarding}
           className="text-white/80 text-sm font-semibold h-9 px-3 rounded-full bg-black/45 border border-white/10"
         >
           Passer
