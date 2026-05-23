@@ -9,6 +9,14 @@ interface PressDashboardProps {
 
 const categories = [...PRESS_CONTENT_CATEGORIES];
 
+const getPublicationErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return 'Publication impossible pour le moment. Vérifiez le média puis réessayez.';
+};
+
 const PressDashboard: React.FC<PressDashboardProps> = ({ user }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [kind, setKind] = useState<PressContentKind>('article');
@@ -97,7 +105,7 @@ const PressDashboard: React.FC<PressDashboardProps> = ({ user }) => {
       setSuccess(kind === 'article' ? 'Article publié.' : 'Reportage publié.');
     } catch (err) {
       console.error('Publication presse impossible:', err);
-      setError('Publication impossible pour le moment. Vérifiez le média puis réessayez.');
+      setError(getPublicationErrorMessage(err));
     } finally {
       setSubmitting(false);
     }

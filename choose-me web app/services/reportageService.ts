@@ -123,9 +123,29 @@ const isVideoFile = (file: File): boolean =>
 const isImageFile = (file: File): boolean =>
   file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|avif)$/i.test(file.name);
 
-const createMediaFormData = (file: File, userId: string): FormData => {
+const createVideoFormData = (file: File, userId: string): FormData => {
   const formData = new FormData();
-  formData.append('file', file);
+  const rawMimeType = file.type?.startsWith('video/') ? file.type : 'video/webm';
+  const mimeType = rawMimeType.split(';')[0] || 'video/webm';
+  const extension = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+  const uploadBlob = new Blob([file], { type: mimeType });
+  formData.append('file', uploadBlob, `performance.${extension}`);
+  formData.append('userId', userId);
+  return formData;
+};
+
+const createImageFormData = (file: File, userId: string): FormData => {
+  const formData = new FormData();
+  const mimeType = file.type?.startsWith('image/') ? file.type : 'image/jpeg';
+  const extension = mimeType.includes('png')
+    ? 'png'
+    : mimeType.includes('webp')
+      ? 'webp'
+      : mimeType.includes('gif')
+        ? 'gif'
+        : 'jpg';
+  const uploadBlob = new Blob([file], { type: mimeType });
+  formData.append('file', uploadBlob, `profile.${extension}`);
   formData.append('userId', userId);
   return formData;
 };
@@ -152,14 +172,16 @@ const normalizeUploadPayload = (payload: PressMediaUploadPayload): PressMediaUpl
     resourceType
   };
 };
+
 const formatUploadError = (payload: PressMediaUploadPayload, fallback: string): string => {
   const detail = payload && 'detail' in payload && payload.detail ? ` (${payload.detail})` : '';
   return `${payload && 'error' in payload ? payload.error : fallback}${detail}`;
 };
-async function postPressMedia(endpoint: string, file: File, userId: string): Promise<{ response: Response; payload: PressMediaUploadPayload }> {
+
+async function postPressMedia(endpoint: string, formData: FormData): Promise<{ response: Response; payload: PressMediaUploadPayload }> {
   const response = await fetch(endpoint, {
     method: 'POST',
-    body: createMediaFormData(file, userId)
+    body: formData
   });
 
   const payload = await response.json().catch(() => null) as PressMediaUploadPayload;
@@ -167,28 +189,27 @@ async function postPressMedia(endpoint: string, file: File, userId: string): Pro
 }
 
 async function uploadPressMedia(file: File, userId: string): Promise<PressMediaUploadResult> {
-  if (!isVideoFile(file) && !isImageFile(file)) {
+  const endpoint = isVideoFile(file)
+    ? '/api/performance-media'
+    : isImageFile(file)
+      ? '/api/profile-image'
+      : '';
+
+  if (!endpoint) {
     throw new Error('Le média doit être une image ou une vidéo.');
   }
-  const primary = await postPressMedia('/api/reportage-media', file, userId);
-  const primaryPayload = normalizeUploadPayload(primary.payload);
 
-  if (primary.response.ok && primaryPayload) {
-    return primaryPayload;
+  const formData = isVideoFile(file)
+    ? createVideoFormData(file, userId)
+    : createImageFormData(file, userId);
+  const upload = await postPressMedia(endpoint, formData);
+  const payload = normalizeUploadPayload(upload.payload);
+
+  if (!upload.response.ok || !payload) {
+    throw new Error(formatUploadError(upload.payload, 'Impossible d’uploader le média sur Cloudinary.'));
   }
 
-  if (primary.response.status !== 404) {
-    throw new Error(formatUploadError(primary.payload, 'Impossible d’uploader le média sur Cloudinary.'));
-  }
-
-  const fallbackEndpoint = isVideoFile(file) ? '/api/performance-media' : '/api/profile-image';
-  const fallback = await postPressMedia(fallbackEndpoint, file, userId);
-  const fallbackPayload = normalizeUploadPayload(fallback.payload);
-
-  if (!fallback.response.ok || !fallbackPayload) {
-    throw new Error(formatUploadError(fallback.payload, 'Impossible d’uploader le média sur Cloudinary.'));
-  }
-  return fallbackPayload;
+  return payload;
 }
 
 export async function fetchReportages(): Promise<ReportageItem[]> {
