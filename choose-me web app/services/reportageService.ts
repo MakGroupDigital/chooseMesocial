@@ -81,6 +81,32 @@ interface CreatePressContentInput {
 
 type PressMediaUploadPayload = PressMediaUploadResult | { error?: string; detail?: string } | null;
 
+interface CloudinarySignedUpload {
+  cloudName: string;
+  apiKey: string;
+  signature: string;
+  timestamp: number;
+  folder: string;
+  publicId: string;
+  resourceType: 'image' | 'video';
+}
+
+interface CloudinaryDirectUploadPayload {
+  secure_url?: string;
+  public_id?: string;
+  resource_type?: 'image' | 'video';
+  format?: string;
+  bytes?: number;
+  duration?: number;
+  width?: number;
+  height?: number;
+  error?: { message?: string } | string;
+}
+
+type CloudinarySignPayload = CloudinarySignedUpload | { error?: string; detail?: string } | null;
+
+const SERVER_UPLOAD_LIMIT_BYTES = 3.5 * 1024 * 1024;
+
 const countLikes = (value: unknown): number => {
   if (Array.isArray(value)) return value.length;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -178,6 +204,24 @@ const formatUploadError = (payload: PressMediaUploadPayload, fallback: string): 
   return `${payload && 'error' in payload ? payload.error : fallback}${detail}`;
 };
 
+const formatCloudinaryDirectError = (payload: CloudinaryDirectUploadPayload | null, fallback: string): string => {
+  if (!payload?.error) return fallback;
+  if (typeof payload.error === 'string') return payload.error;
+  return payload.error.message || fallback;
+};
+
+const getCloudinaryTransformedUrl = (
+  cloudName: string,
+  resourceType: 'image' | 'video',
+  publicId: string
+): string => {
+  if (resourceType === 'video') {
+    return `https://res.cloudinary.com/${cloudName}/video/upload/so_0,w_720,c_scale/${publicId}.jpg`;
+  }
+
+  return `https://res.cloudinary.com/${cloudName}/image/upload/w_960,c_scale,q_auto,f_auto/${publicId}`;
+};
+
 async function postPressMedia(endpoint: string, formData: FormData): Promise<{ response: Response; payload: PressMediaUploadPayload }> {
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -186,6 +230,79 @@ async function postPressMedia(endpoint: string, formData: FormData): Promise<{ r
 
   const payload = await response.json().catch(() => null) as PressMediaUploadPayload;
   return { response, payload };
+}
+
+async function getCloudinarySignedUpload(userId: string, resourceType: 'image' | 'video'): Promise<CloudinarySignedUpload> {
+  const response = await fetch('/api/cloudinary/sign-upload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ userId, resourceType })
+  });
+
+  const payload = await response.json().catch(() => null) as CloudinarySignPayload;
+
+  if (
+    !response.ok ||
+    !payload ||
+    !('cloudName' in payload) ||
+    !payload.cloudName ||
+    !payload.apiKey ||
+    !payload.signature ||
+    !payload.timestamp ||
+    !payload.folder ||
+    !payload.publicId
+  ) {
+    throw new Error(formatUploadError(payload, 'Impossible de préparer l’upload Cloudinary.'));
+  }
+
+  return payload;
+}
+
+async function uploadPressMediaDirectly(file: File, userId: string): Promise<PressMediaUploadResult> {
+  const resourceType = isVideoFile(file) ? 'video' : 'image';
+  const signedUpload = await getCloudinarySignedUpload(userId, resourceType);
+  const formData = new FormData();
+
+  formData.append('file', file, file.name || `${resourceType}.${resourceType === 'video' ? 'mp4' : 'jpg'}`);
+  formData.append('api_key', signedUpload.apiKey);
+  formData.append('timestamp', String(signedUpload.timestamp));
+  formData.append('signature', signedUpload.signature);
+  formData.append('folder', signedUpload.folder);
+  formData.append('public_id', signedUpload.publicId);
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${signedUpload.cloudName}/${resourceType}/upload`,
+    {
+      method: 'POST',
+      body: formData
+    }
+  );
+  const payload = await response.json().catch(() => null) as CloudinaryDirectUploadPayload | null;
+
+  if (!response.ok || !payload?.secure_url) {
+    throw new Error(formatCloudinaryDirectError(payload, 'Impossible d’uploader le média sur Cloudinary.'));
+  }
+
+  const publicId = payload.public_id || `${signedUpload.folder}/${signedUpload.publicId}`;
+  const thumbnailUrl = getCloudinaryTransformedUrl(signedUpload.cloudName, resourceType, publicId);
+
+  return {
+    provider: 'cloudinary',
+    mediaUrl: payload.secure_url,
+    videoUrl: resourceType === 'video' ? payload.secure_url : '',
+    imageUrl: resourceType === 'image' ? thumbnailUrl : '',
+    secureUrl: payload.secure_url,
+    thumbnailUrl,
+    publicId,
+    resourceType,
+    format: payload.format,
+    bytes: payload.bytes,
+    duration: payload.duration,
+    width: payload.width,
+    height: payload.height
+  };
 }
 
 async function uploadPressMedia(file: File, userId: string): Promise<PressMediaUploadResult> {
@@ -199,11 +316,19 @@ async function uploadPressMedia(file: File, userId: string): Promise<PressMediaU
     throw new Error('Le média doit être une image ou une vidéo.');
   }
 
+  if (file.size > SERVER_UPLOAD_LIMIT_BYTES) {
+    return uploadPressMediaDirectly(file, userId);
+  }
+
   const formData = isVideoFile(file)
     ? createVideoFormData(file, userId)
     : createImageFormData(file, userId);
   const upload = await postPressMedia(endpoint, formData);
   const payload = normalizeUploadPayload(upload.payload);
+
+  if (upload.response.status === 413) {
+    return uploadPressMediaDirectly(file, userId);
+  }
 
   if (!upload.response.ok || !payload) {
     throw new Error(formatUploadError(upload.payload, 'Impossible d’uploader le média sur Cloudinary.'));
