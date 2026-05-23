@@ -62,7 +62,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
   const navItems = getNavItems();
 
   return (
-    <nav className="pointer-events-none absolute inset-x-0 bottom-3 z-[100] px-3 pb-[env(safe-area-inset-bottom)]">
+    <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-[100] px-2 pb-[max(env(safe-area-inset-bottom),0px)]">
       <div className="pointer-events-auto relative mx-auto flex max-w-[430px] items-end justify-between gap-1 rounded-[28px] border border-white/[0.12] bg-[#070707]/78 px-2 py-2 shadow-[0_18px_55px_rgba(0,0,0,0.7)] backdrop-blur-2xl">
         <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.28] to-transparent" />
         <div className="pointer-events-none absolute inset-x-10 -top-6 h-12 rounded-full bg-[#19DB8A]/10 blur-2xl" />
