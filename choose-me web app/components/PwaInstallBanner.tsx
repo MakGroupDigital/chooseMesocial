@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Bell, CheckCircle2, Download, Home, MoreVertical, Share2, Smartphone, X } from 'lucide-react';
+import { ArrowRight, Bell, CheckCircle2, Download, Ellipsis, Home, MoreVertical, Share2, Smartphone, X } from 'lucide-react';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -188,18 +188,24 @@ const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ hasBottomNav = fals
           {showFallback && (
             <div className="mt-4 rounded-2xl border border-[#19DB8A]/25 bg-[#19DB8A]/[0.07] p-4 text-sm leading-relaxed text-white/82">
               <p className="font-semibold text-white">
-                Cliquez sur le bouton avec 3 points en haut à droite de votre navigateur, ensuite cliquez sur Partager, choisissez Ajouter à l’écran d’accueil et confirmez.
+                Cliquez sur le bouton avec 3 points, souvent en bas à droite ou en haut à droite selon votre version du navigateur. Cliquez sur Partager, puis Plus, choisissez Ajouter à l’écran d’accueil et confirmez.
               </p>
 
               <div className="custom-scrollbar mt-4 flex items-center gap-2 overflow-x-auto pb-1">
-                <div className="min-w-[92px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+                <div className="min-w-[112px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
                   <MoreVertical className="mx-auto h-5 w-5 text-[#19DB8A]" />
                   <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/70">3 points</p>
+                  <p className="mt-0.5 text-[9px] font-semibold text-white/45">bas ou haut droit</p>
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-[#19DB8A]" />
                 <div className="min-w-[92px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
                   <Share2 className="mx-auto h-5 w-5 text-[#19DB8A]" />
                   <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/70">Partager</p>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-[#19DB8A]" />
+                <div className="min-w-[92px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+                  <Ellipsis className="mx-auto h-5 w-5 text-[#19DB8A]" />
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/70">Plus</p>
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-[#19DB8A]" />
                 <div className="min-w-[112px] rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
