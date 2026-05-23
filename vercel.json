@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "installCommand": "cd \"choose-me web app\" && npm install",
+  "installCommand": "npm install --omit=dev && cd \"choose-me web app\" && npm install",
   "buildCommand": "cd \"choose-me web app\" && npm run build",
   "outputDirectory": "choose-me web app/dist"
 }
