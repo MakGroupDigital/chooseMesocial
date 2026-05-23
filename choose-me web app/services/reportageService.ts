@@ -63,6 +63,8 @@ interface CreatePressContentInput {
   mediaFile?: File | null;
 }
 
+type PressMediaUploadPayload = PressMediaUploadResult | { error?: string; detail?: string } | null;
+
 const countLikes = (value: unknown): number => {
   if (Array.isArray(value)) return value.length;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -91,24 +93,82 @@ const getMediaType = (data: any, videoUrl: string, imageUrl: string): PressMedia
   return 'none';
 };
 
-async function uploadPressMedia(file: File, userId: string): Promise<PressMediaUploadResult> {
+const isVideoFile = (file: File): boolean =>
+  file.type.startsWith('video/') || /\.(webm|mp4|mov|m4v|ogg)$/i.test(file.name);
+
+const isImageFile = (file: File): boolean =>
+  file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|avif)$/i.test(file.name);
+
+const createMediaFormData = (file: File, userId: string): FormData => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('userId', userId);
+  return formData;
+};
 
-  const response = await fetch('/api/reportage-media', {
+const normalizeUploadPayload = (payload: PressMediaUploadPayload): PressMediaUploadResult | null => {
+  if (!payload || !('provider' in payload)) return null;
+
+  const videoUrl = payload.videoUrl || '';
+  const imageUrl = payload.imageUrl || '';
+  const secureUrl = payload.secureUrl || videoUrl || imageUrl || '';
+  const mediaUrl = payload.mediaUrl || videoUrl || imageUrl || secureUrl;
+  const resourceType = payload.resourceType === 'video' || payload.resourceType === 'image'
+    ? payload.resourceType
+    : videoUrl ? 'video' : 'image';
+
+  if (!mediaUrl) return null;
+
+  return {
+    ...payload,
+    mediaUrl,
+    videoUrl,
+    imageUrl,
+    secureUrl,
+    resourceType
+  };
+};
+
+const formatUploadError = (payload: PressMediaUploadPayload, fallback: string): string => {
+  const detail = payload && 'detail' in payload && payload.detail ? ` (${payload.detail})` : '';
+  return `${payload && 'error' in payload ? payload.error : fallback}${detail}`;
+};
+
+async function postPressMedia(endpoint: string, file: File, userId: string): Promise<{ response: Response; payload: PressMediaUploadPayload }> {
+  const response = await fetch(endpoint, {
     method: 'POST',
-    body: formData
+    body: createMediaFormData(file, userId)
   });
 
-  const payload = await response.json().catch(() => null) as PressMediaUploadResult | { error?: string; detail?: string } | null;
+  const payload = await response.json().catch(() => null) as PressMediaUploadPayload;
+  return { response, payload };
+}
 
-  if (!response.ok || !payload || !('mediaUrl' in payload)) {
-    const detail = payload && 'detail' in payload && payload.detail ? ` (${payload.detail})` : '';
-    throw new Error(`${payload && 'error' in payload ? payload.error : 'Impossible d’uploader le média.'}${detail}`);
+async function uploadPressMedia(file: File, userId: string): Promise<PressMediaUploadResult> {
+  if (!isVideoFile(file) && !isImageFile(file)) {
+    throw new Error('Le média doit être une image ou une vidéo.');
   }
 
-  return payload;
+  const primary = await postPressMedia('/api/reportage-media', file, userId);
+  const primaryPayload = normalizeUploadPayload(primary.payload);
+
+  if (primary.response.ok && primaryPayload) {
+    return primaryPayload;
+  }
+
+  if (primary.response.status !== 404) {
+    throw new Error(formatUploadError(primary.payload, 'Impossible d’uploader le média sur Cloudinary.'));
+  }
+
+  const fallbackEndpoint = isVideoFile(file) ? '/api/performance-media' : '/api/profile-image';
+  const fallback = await postPressMedia(fallbackEndpoint, file, userId);
+  const fallbackPayload = normalizeUploadPayload(fallback.payload);
+
+  if (!fallback.response.ok || !fallbackPayload) {
+    throw new Error(formatUploadError(fallback.payload, 'Impossible d’uploader le média sur Cloudinary.'));
+  }
+
+  return fallbackPayload;
 }
 
 export async function fetchReportages(): Promise<ReportageItem[]> {
