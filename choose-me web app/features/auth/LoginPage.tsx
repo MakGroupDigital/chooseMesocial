@@ -3,15 +3,17 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/Button';
 import { Mail, Lock, LogIn, ChevronLeft } from 'lucide-react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirebaseAuth } from '../../services/firebase';
 import { startGoogleAuth } from '../../services/googleAuthService';
+import { FIREBASE_NETWORK_ERROR_MESSAGE, isFirebaseNetworkError } from '../../utils/authErrors';
 
 const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -25,14 +27,16 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setInfo(null);
     try {
       const auth = getFirebaseAuth();
       await signInWithEmailAndPassword(auth, email.trim(), password);
       onLogin();
-      navigate('/home');
     } catch (err: any) {
       const message =
-        err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password'
+        isFirebaseNetworkError(err)
+          ? FIREBASE_NETWORK_ERROR_MESSAGE
+          : err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password'
           ? 'Email ou mot de passe incorrect.'
           : 'Impossible de vous connecter pour le moment.';
       setError(message);
@@ -44,17 +48,19 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
   const handleGoogleLogin = async (mode: 'login' | 'signup' = 'login') => {
     setLoading(true);
     setError(null);
+    setInfo(null);
     try {
       await startGoogleAuth(mode);
       onLogin();
-      navigate('/home');
     } catch (err: any) {
       console.error('❌ Erreur connexion Google:', err);
       console.error('Code erreur:', err.code);
       console.error('Message:', err.message);
       
       let errorMessage = 'Impossible de vous connecter avec Google.';
-      if (err.code === 'auth/unauthorized-domain') {
+      if (isFirebaseNetworkError(err)) {
+        errorMessage = FIREBASE_NETWORK_ERROR_MESSAGE;
+      } else if (err.code === 'auth/unauthorized-domain') {
         errorMessage = 'Domaine non autorisé. Contactez l\'administrateur.';
       } else if (err.code === 'auth/operation-not-allowed') {
         errorMessage = 'Google Auth n’est pas activé dans Firebase.';
@@ -67,6 +73,34 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
       }
       
       setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    const trimmedEmail = email.trim();
+    setError(null);
+    setInfo(null);
+
+    if (!trimmedEmail) {
+      setError('Saisissez votre email avant de demander la réinitialisation.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const auth = getFirebaseAuth();
+      await sendPasswordResetEmail(auth, trimmedEmail);
+      setInfo('Email de réinitialisation envoyé. Vérifiez votre boîte mail.');
+    } catch (err: any) {
+      const message =
+        isFirebaseNetworkError(err)
+          ? FIREBASE_NETWORK_ERROR_MESSAGE
+          : err?.code === 'auth/invalid-email'
+          ? 'Email invalide.'
+          : 'Impossible d’envoyer l’email de réinitialisation pour le moment.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -114,7 +148,7 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
           <div className="space-y-2">
             <label className="text-sm font-medium text-white/60 ml-1 flex justify-between">
               Mot de passe
-              <button type="button" className="text-[#19DB8A] text-xs hover:underline">Oublié ?</button>
+              <button type="button" onClick={handlePasswordReset} disabled={loading} className="text-[#19DB8A] text-xs hover:underline disabled:opacity-50">Oublié ?</button>
             </label>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" size={20} />
@@ -131,6 +165,9 @@ const LoginPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
 
           {error && (
             <p className="text-sm text-red-400 text-center -mt-2">{error}</p>
+          )}
+          {info && (
+            <p className="text-sm text-[#19DB8A] text-center -mt-2">{info}</p>
           )}
 
           <Button type="submit" disabled={loading} className="w-full py-4 text-lg">

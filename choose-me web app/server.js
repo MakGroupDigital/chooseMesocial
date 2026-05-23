@@ -308,6 +308,111 @@ app.post('/api/profile-image', upload.single('file'), async (req, res) => {
   }
 });
 
+app.post('/api/reportage-media', upload.single('file'), async (req, res) => {
+  if (!configureCloudinary()) {
+    return res.status(500).json({ error: 'CLOUDINARY_URL is not configured on the server' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'Missing media file' });
+  }
+
+  const fileName = req.file.originalname || '';
+  const isVideoMime = req.file.mimetype.startsWith('video/');
+  const isImageMime = req.file.mimetype.startsWith('image/');
+  const looksLikeVideoFile = /\.(webm|mp4|mov|m4v|ogg)$/i.test(fileName);
+  const looksLikeImageFile = /\.(jpg|jpeg|png|webp|gif|avif)$/i.test(fileName);
+  const isBrowserBlobMime = ['application/octet-stream', ''].includes(req.file.mimetype);
+  const resourceType = isVideoMime || (isBrowserBlobMime && looksLikeVideoFile) ? 'video' : 'image';
+
+  if (
+    !isVideoMime &&
+    !isImageMime &&
+    !(isBrowserBlobMime && (looksLikeVideoFile || looksLikeImageFile))
+  ) {
+    return res.status(400).json({
+      error: 'Only image and video uploads are supported',
+      detail: `Received mimetype "${req.file.mimetype}" for "${fileName}"`
+    });
+  }
+
+  const userId = normalizeCloudinaryFolderSegment(req.body.userId || 'anonymous');
+
+  try {
+    let uploadBuffer = req.file.buffer;
+    const uploadOptions = {
+      resource_type: resourceType,
+      folder: `choose-me/reportages/${userId}`,
+      public_id: `press_${resourceType}_${Date.now()}`,
+      unique_filename: true,
+      overwrite: false
+    };
+
+    if (resourceType === 'image') {
+      try {
+        uploadBuffer = await sharp(req.file.buffer)
+          .rotate()
+          .resize(1400, 1400, {
+            fit: 'inside',
+            withoutEnlargement: true
+          })
+          .jpeg({
+            quality: 86,
+            mozjpeg: true
+          })
+          .toBuffer();
+        uploadOptions.format = 'jpg';
+      } catch (resizeError) {
+        console.warn('Reportage image resize skipped:', resizeError);
+      }
+    }
+
+    const result = await uploadToCloudinary(uploadBuffer, uploadOptions);
+    const thumbnailUrl = resourceType === 'video'
+      ? cloudinary.url(result.public_id, {
+          resource_type: 'video',
+          secure: true,
+          format: 'jpg',
+          transformation: [
+            { start_offset: '0' },
+            { width: 720, crop: 'scale' }
+          ]
+        })
+      : cloudinary.url(result.public_id, {
+          resource_type: 'image',
+          secure: true,
+          transformation: [
+            { width: 960, crop: 'scale' },
+            { quality: 'auto', fetch_format: 'auto' }
+          ]
+        });
+
+    return res.json({
+      provider: 'cloudinary',
+      mediaUrl: result.secure_url,
+      videoUrl: resourceType === 'video' ? result.secure_url : '',
+      imageUrl: resourceType === 'image' ? thumbnailUrl : '',
+      secureUrl: result.secure_url,
+      thumbnailUrl,
+      publicId: result.public_id,
+      resourceType,
+      format: result.format,
+      bytes: result.bytes,
+      duration: result.duration,
+      width: result.width,
+      height: result.height
+    });
+  } catch (error) {
+    console.error('Cloudinary reportage upload failed:', error);
+    const cloudinaryStatus = error?.http_code || error?.status || 500;
+    const status = cloudinaryStatus === 499 ? 504 : cloudinaryStatus;
+    return res.status(status).json({
+      error: 'Unable to upload reportage media to Cloudinary',
+      detail: serializeError(error)
+    });
+  }
+});
+
 app.post('/api/cloudinary/delete-media', async (req, res) => {
   if (!configureCloudinary()) {
     return res.status(500).json({ error: 'CLOUDINARY_URL is not configured on the server' });

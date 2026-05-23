@@ -392,10 +392,14 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
   const handleSendComment = async () => {
     if (!activeCommentsPost || !newComment.trim()) return;
     if (!activeCommentsPost.docPath) return;
+    if (!userId) {
+      navigate('/login');
+      return;
+    }
 
     const optimistic: PostComment = {
       id: `local-${Date.now()}`,
-      userId: userId || 'anonymous',
+      userId,
       userName: currentUserData?.displayName || currentUser?.displayName || 'Utilisateur',
       userAvatar: currentUserData?.avatarUrl || currentUser?.photoURL || '/assets/images/app_launcher_icon.png',
       text: newComment.trim(),
@@ -489,6 +493,10 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
 
   const handleSendReply = async (comment: PostComment) => {
     if (!activeCommentsPost?.docPath || !replyText.trim() || sendingReply) return;
+    if (!userId) {
+      navigate('/login');
+      return;
+    }
 
     if (comment.id.startsWith('local-')) {
       alert('Patientez un instant avant de répondre à ce commentaire.');
@@ -497,7 +505,7 @@ const HomeChoosePage: React.FC<{ userType: UserType }> = ({ userType }) => {
 
     const optimisticReply: PostCommentReply = {
       id: `local-reply-${Date.now()}`,
-      userId: userId || 'anonymous',
+      userId,
       userName: currentUserData?.displayName || currentUser?.displayName || 'Utilisateur',
       userAvatar: currentUserData?.avatarUrl || currentUser?.photoURL || '/assets/images/app_launcher_icon.png',
       text: replyText.trim(),

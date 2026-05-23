@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { FilePlus2 } from 'lucide-react';
 import { UserType } from '../types';
 import { IconFeed, IconNews, IconPerf, IconLive, IconWallet, IconProfile, IconMessage } from './Icons';
 
@@ -13,10 +14,22 @@ type NavItem = {
   label: string;
   path: string;
   variant?: 'standard' | 'publish' | 'live';
+  compact?: boolean;
 };
 
 const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
   const getNavItems = (): NavItem[] => {
+    if (userType === UserType.PRESS) {
+      return [
+        { icon: <IconFeed />, label: 'Feed', path: '/home' },
+        { icon: <IconNews />, label: 'Presse', path: '/explorer' },
+        { icon: <FilePlus2 />, label: 'Créer', path: '/dashboard/press', variant: 'publish', compact: true },
+        { icon: <IconLive />, label: 'Live', path: '/live-match', variant: 'live', compact: true },
+        { icon: <IconMessage />, label: 'Messages', path: '/messages' },
+        { icon: <IconProfile />, label: 'Profil', path: '/profile' }
+      ];
+    }
+
     const items: NavItem[] = [
       { icon: <IconFeed />, label: 'Feed', path: '/home' },
     ];
@@ -60,7 +73,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
             to={item.path}
             className={({ isActive }) => {
               if (item.variant === 'live') {
-                return `group relative -mt-7 flex min-w-[58px] flex-1 flex-col items-center gap-1 rounded-[22px] px-1 pb-2 pt-1 transition-all duration-300 ${
+                return `group relative ${item.compact ? 'flex' : '-mt-7 flex'} min-w-[54px] flex-1 flex-col items-center gap-1 rounded-[22px] px-1 ${item.compact ? 'py-2' : 'pb-2 pt-1'} transition-all duration-300 ${
                   isActive
                     ? 'text-black'
                     : 'text-white hover:text-black'
@@ -83,19 +96,19 @@ const BottomNav: React.FC<BottomNavProps> = ({ userType }) => {
             }}
           >
             {({ isActive }) => {
-              const iconSize = item.variant === 'live' ? 25 : item.variant === 'publish' ? 23 : 21;
+              const iconSize = item.variant === 'live' ? (item.compact ? 22 : 25) : item.variant === 'publish' ? (item.compact ? 21 : 23) : 21;
 
               if (item.variant === 'live') {
                 return (
                   <>
-                    <div className={`relative flex h-[54px] w-[54px] items-center justify-center rounded-[20px] border transition-all duration-300 ${
+                    <div className={`relative flex ${item.compact ? 'h-9 w-9 rounded-xl' : 'h-[54px] w-[54px] rounded-[20px]'} items-center justify-center border transition-all duration-300 ${
                       isActive
                         ? 'border-[#19DB8A] bg-[#19DB8A] shadow-[0_16px_35px_rgba(25,219,138,0.35)]'
                         : 'border-[#FF8A3C]/55 bg-gradient-to-br from-[#FF8A3C] to-[#19DB8A] shadow-[0_14px_32px_rgba(255,138,60,0.28)] group-hover:shadow-[0_16px_36px_rgba(25,219,138,0.32)]'
                     }`}>
-                      <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5">
+                      <span className={`absolute -right-0.5 -top-0.5 flex ${item.compact ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5'}`}>
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-70" />
-                        <span className="relative inline-flex h-3.5 w-3.5 rounded-full border-2 border-black bg-red-500" />
+                        <span className={`relative inline-flex ${item.compact ? 'h-2.5 w-2.5 border' : 'h-3.5 w-3.5 border-2'} rounded-full border-black bg-red-500`} />
                       </span>
                       {React.cloneElement(item.icon, { size: iconSize, className: 'relative z-10' })}
                     </div>

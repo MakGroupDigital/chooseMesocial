@@ -4,7 +4,8 @@ export enum UserType {
   RECRUITER = 'recruteur',
   CLUB = 'club',
   PRESS = 'presse',
-  VISITOR = 'visiteur'
+  VISITOR = 'visiteur',
+  ADMIN = 'admin'
 }
 
 export interface UserProfile {
@@ -12,6 +13,8 @@ export interface UserProfile {
   email: string;
   displayName: string;
   type: UserType;
+  role?: string;
+  isAdmin?: boolean;
   needsProfileType?: boolean;
   country: string;
   city?: string;
