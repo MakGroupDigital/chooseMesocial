@@ -12,9 +12,24 @@ import {
   updateDoc
 } from 'firebase/firestore';
 import { getFirestoreDb } from './firebase';
+import { createAppNotification } from './notificationService';
 
 export type PressContentKind = 'article' | 'reportage';
 export type PressMediaType = 'none' | 'image' | 'video';
+
+export const PRESS_CONTENT_CATEGORIES = [
+  'Sport',
+  'CAN 2026',
+  'Football',
+  'Basketball',
+  'Athlétisme',
+  'Interview',
+  'Reportage terrain',
+  'Transferts',
+  'Équipes',
+  'Formation',
+  'Opinion'
+] as const;
 
 export interface ReportageItem {
   id: string;
@@ -32,6 +47,7 @@ export interface ReportageItem {
   likes: number;
   likedBy: string[];
   shares: number;
+  comments: number;
   thumbnailUrl?: string;
   docPath: string;
 }
@@ -68,6 +84,14 @@ type PressMediaUploadPayload = PressMediaUploadResult | { error?: string; detail
 const countLikes = (value: unknown): number => {
   if (Array.isArray(value)) return value.length;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return 0;
+};
+
+const countNumber = (...values: unknown[]): number => {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (Array.isArray(value)) return value.length;
+  }
   return 0;
 };
 
@@ -128,12 +152,10 @@ const normalizeUploadPayload = (payload: PressMediaUploadPayload): PressMediaUpl
     resourceType
   };
 };
-
 const formatUploadError = (payload: PressMediaUploadPayload, fallback: string): string => {
   const detail = payload && 'detail' in payload && payload.detail ? ` (${payload.detail})` : '';
   return `${payload && 'error' in payload ? payload.error : fallback}${detail}`;
 };
-
 async function postPressMedia(endpoint: string, file: File, userId: string): Promise<{ response: Response; payload: PressMediaUploadPayload }> {
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -148,7 +170,6 @@ async function uploadPressMedia(file: File, userId: string): Promise<PressMediaU
   if (!isVideoFile(file) && !isImageFile(file)) {
     throw new Error('Le média doit être une image ou une vidéo.');
   }
-
   const primary = await postPressMedia('/api/reportage-media', file, userId);
   const primaryPayload = normalizeUploadPayload(primary.payload);
 
@@ -167,7 +188,6 @@ async function uploadPressMedia(file: File, userId: string): Promise<PressMediaU
   if (!fallback.response.ok || !fallbackPayload) {
     throw new Error(formatUploadError(fallback.payload, 'Impossible d’uploader le média sur Cloudinary.'));
   }
-
   return fallbackPayload;
 }
 
@@ -208,6 +228,7 @@ export async function fetchReportages(): Promise<ReportageItem[]> {
         likes: countLikes(data.likes),
         likedBy,
         shares: typeof data.shares === 'number' ? data.shares : 0,
+        comments: countNumber(data.num_comments, data.comments, data.commentCount, data.commentsCount),
         thumbnailUrl: getString(data.thumbnailUrl, imageUrl),
         docPath: docSnap.ref.path
       });
@@ -256,6 +277,7 @@ export async function createPressContent(input: CreatePressContentInput): Promis
     likes: [],
     shares: 0,
     comments: 0,
+    num_comments: 0,
     status: 'publié',
     date: serverTimestamp(),
     createdAt: serverTimestamp(),
@@ -277,6 +299,23 @@ export async function toggleReportageLike(item: ReportageItem, userId: string, i
     likes: isLiked ? arrayRemove(userId) : arrayUnion(userId),
     updatedAt: serverTimestamp()
   });
+
+  if (!isLiked && item.reporterId && item.reporterId !== userId) {
+    try {
+      await createAppNotification({
+        type: 'like',
+        recipientId: item.reporterId,
+        actorId: userId,
+        title: item.kind === 'article' ? 'Article aimé' : 'Reportage aimé',
+        body: `Votre ${item.kind === 'article' ? 'article' : 'reportage'} a reçu un like.`,
+        data: {
+          docPath: item.docPath || `reportage/${item.id}`
+        }
+      });
+    } catch (error) {
+      console.warn('Notification de like presse indisponible:', error);
+    }
+  }
 }
 
 export async function incrementReportageShare(item: ReportageItem): Promise<void> {

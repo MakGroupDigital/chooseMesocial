@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, ImagePlus, Newspaper, Send, Video, X } from 'lucide-react';
 import { UserProfile } from '../../../types';
-import { createPressContent, type PressContentKind } from '../../../services/reportageService';
+import { PRESS_CONTENT_CATEGORIES, createPressContent, type PressContentKind } from '../../../services/reportageService';
 
 interface PressDashboardProps {
   user: UserProfile;
 }
 
-const categories = ['Sport', 'Interview', 'Transferts', 'Équipes', 'Formation', 'Opinion'];
+const categories = [...PRESS_CONTENT_CATEGORIES];
 
 const PressDashboard: React.FC<PressDashboardProps> = ({ user }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);

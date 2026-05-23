@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -12,10 +13,35 @@ import {
 import { getFirestoreDb } from './firebase';
 import type { PostComment, PostCommentReply } from '../types';
 import { normalizeEngagementCount } from '../utils/engagement';
+import { createAppNotification } from './notificationService';
 
 // Sous-collection de commentaires par publication :
 // /users/{userId}/publication/{pubId}/comments/{commentId}
 // ou toute autre racine, puisque nous utilisons le chemin complet stocké dans FeedPost.
+
+const getPublicationOwnerId = (data: any, docPath: string): string => {
+  const explicitOwner =
+    data?.reporterId ||
+    data?.authorId ||
+    data?.userId ||
+    data?.ownerId ||
+    data?.athleteId ||
+    '';
+  if (typeof explicitOwner === 'string' && explicitOwner.trim()) return explicitOwner.trim();
+
+  const pathParts = docPath.split('/');
+  if ((pathParts[0] === 'users' || pathParts[0] === 'user') && pathParts[1]) {
+    return pathParts[1];
+  }
+  return '';
+};
+
+const getPublicationLabel = (data: any): string => {
+  const kind = String(data?.kind || data?.type || '').toLowerCase();
+  if (kind === 'article') return 'article';
+  if (kind === 'reportage') return 'reportage';
+  return 'publication';
+};
 
 export async function fetchComments(docPath: string): Promise<PostComment[]> {
   const db = getFirestoreDb();
@@ -93,11 +119,33 @@ export async function addComment(options: {
   // Incrémente num_comments sur la publication pour rester cohérent avec Flutter.
   try {
     await updateDoc(publicationRef, {
+      comments: increment(1),
       num_comments: increment(1)
     });
   } catch (e) {
     // Si l'incrément échoue, ce n'est pas bloquant pour l'ajout du commentaire.
     console.warn('Impossible de mettre à jour num_comments:', e);
+  }
+
+  try {
+    const publicationSnap = await getDoc(publicationRef);
+    const publicationData = publicationSnap.exists() ? publicationSnap.data() : {};
+    const ownerId = getPublicationOwnerId(publicationData, options.docPath);
+    const label = getPublicationLabel(publicationData);
+
+    await createAppNotification({
+      type: 'comment',
+      recipientId: ownerId,
+      actorId: options.userId,
+      title: 'Nouveau commentaire',
+      body: `${options.userName} a commenté votre ${label}.`,
+      data: {
+        docPath: options.docPath,
+        commentId: commentRef.id
+      }
+    });
+  } catch (e) {
+    console.warn('Impossible de créer la notification de commentaire:', e);
   }
 
   return commentRef.id;
@@ -134,10 +182,32 @@ export async function addCommentReply(options: {
 
   try {
     await updateDoc(publicationRef, {
+      comments: increment(1),
       num_comments: increment(1)
     });
   } catch (e) {
     console.warn('Impossible de mettre à jour num_comments après réponse:', e);
+  }
+
+  try {
+    const commentSnap = await getDoc(commentRef);
+    const parentComment = commentSnap.exists() ? commentSnap.data() as any : {};
+    const recipientId = typeof parentComment?.userId === 'string' ? parentComment.userId : '';
+
+    await createAppNotification({
+      type: 'reply',
+      recipientId,
+      actorId: options.userId,
+      title: 'Nouvelle réponse',
+      body: `${options.userName} a répondu à votre commentaire.`,
+      data: {
+        docPath: options.docPath,
+        commentId: options.commentId,
+        replyId: replyRef.id
+      }
+    });
+  } catch (e) {
+    console.warn('Impossible de créer la notification de réponse:', e);
   }
 
   return replyRef.id;

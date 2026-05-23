@@ -44,6 +44,14 @@ const upload = multer({
 
 app.use(express.json({ limit: '1mb' }));
 
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'choose-me-media',
+    cloudinaryConfigured: Boolean(process.env.CLOUDINARY_URL)
+  });
+});
+
 const configureCloudinary = () => {
   const cloudinaryUrl = process.env.CLOUDINARY_URL;
   if (!cloudinaryUrl) return false;
@@ -502,6 +510,10 @@ app.get('*', (req, res) => {
   res.sendFile(join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+if (process.env.VERCEL !== '1') {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
+
+export default app;

@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, Star, MapPin, ChevronRight, Newspaper, TrendingUp, Heart, Share2, Check, UserPlus, PlayCircle, FileText } from 'lucide-react';
+import { Search, Filter, Star, MapPin, ChevronRight, Newspaper, TrendingUp, Heart, Share2, Check, UserPlus, PlayCircle, FileText, MessageCircle } from 'lucide-react';
 import { UserType } from '../../types';
-import { fetchReportages, incrementReportageShare, toggleReportageLike, type ReportageItem } from '../../services/reportageService';
+import { PRESS_CONTENT_CATEGORIES, fetchReportages, incrementReportageShare, toggleReportageLike, type ReportageItem } from '../../services/reportageService';
 import { fetchTalentExplorerItems, type TalentExplorerItem } from '../../services/talentService';
 import { SPORTS_POSITIONS } from '../../utils/sportsData';
 import { getFirebaseAuth } from '../../services/firebase';
@@ -33,8 +33,8 @@ const normalizeSport = (value: string): string =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
 
-const ARTICLE_CATEGORIES = ['Tout', 'Transferts', 'CAN 2024', 'Interview', 'Équipes'] as const;
-type ArticleCategory = typeof ARTICLE_CATEGORIES[number];
+const BASE_ARTICLE_CATEGORIES = ['Tout', ...PRESS_CONTENT_CATEGORIES] as const;
+type ArticleCategory = string;
 
 const ExplorerPage: React.FC<{ userType: UserType }> = ({ userType }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -121,11 +121,35 @@ const ExplorerPage: React.FC<{ userType: UserType }> = ({ userType }) => {
       .includes(normalizedSearch);
   });
 
+  const availableArticleCategories = useMemo(() => {
+    const seen = new Set<string>();
+    const categories: string[] = [];
+
+    [...BASE_ARTICLE_CATEGORIES, ...reportages.map((item) => item.category)]
+      .map((category) => String(category || '').trim())
+      .filter(Boolean)
+      .forEach((category) => {
+        const key = normalizeSport(category);
+        if (seen.has(key)) return;
+        seen.add(key);
+        categories.push(category);
+      });
+
+    return categories;
+  }, [reportages]);
+
   const inferArticleCategory = (reportage: ReportageItem): ArticleCategory => {
+    const explicitCategory = String(reportage.category || '').trim();
+    if (explicitCategory) return explicitCategory;
+
     const haystack = `${reportage.title} ${reportage.detail}`.toLowerCase();
     if (haystack.includes('transfert') || haystack.includes('mercato')) return 'Transferts';
-    if (haystack.includes('can') || haystack.includes('afcon')) return 'CAN 2024';
+    if (haystack.includes('can 2026') || haystack.includes('can') || haystack.includes('afcon')) return 'CAN 2026';
     if (haystack.includes('interview') || haystack.includes('entretien')) return 'Interview';
+    if (haystack.includes('football') || haystack.includes('foot')) return 'Football';
+    if (haystack.includes('basket')) return 'Basketball';
+    if (haystack.includes('athlétisme') || haystack.includes('athletisme')) return 'Athlétisme';
+    if (haystack.includes('formation') || haystack.includes('academie') || haystack.includes('académie')) return 'Formation';
     if (
       haystack.includes('équipe') ||
       haystack.includes('equipe') ||
@@ -139,11 +163,14 @@ const ExplorerPage: React.FC<{ userType: UserType }> = ({ userType }) => {
   };
 
   const filteredReportages = reportages.filter((reportage) => {
-    if (selectedArticleCategory !== 'Tout' && inferArticleCategory(reportage) !== selectedArticleCategory) {
+    if (
+      selectedArticleCategory !== 'Tout' &&
+      normalizeSport(inferArticleCategory(reportage)) !== normalizeSport(selectedArticleCategory)
+    ) {
       return false;
     }
     if (!normalizedSearch) return true;
-    return `${reportage.title} ${reportage.detail} ${reportage.reporter}`
+    return `${reportage.title} ${reportage.detail} ${reportage.reporter} ${reportage.category}`
       .toLowerCase()
       .includes(normalizedSearch);
   });
@@ -393,20 +420,28 @@ const ExplorerPage: React.FC<{ userType: UserType }> = ({ userType }) => {
         /* PRESS / NEWS VIEW */
         <div className="space-y-6">
           {/* Filtres catégories */}
-          <div className="flex overflow-x-auto gap-3 pb-2 -mx-2 px-2 custom-scrollbar">
-            {ARTICLE_CATEGORIES.map((cat) => (
+          <div className="sticky top-0 z-20 -mx-6 -mt-2 border-b border-white/[0.06] bg-[#050505]/92 px-6 py-3 backdrop-blur-xl">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">Catégories</span>
+              <span className="rounded-full bg-[#19DB8A]/10 px-2 py-1 text-[10px] font-black text-[#19DB8A]">
+                CAN 2026
+              </span>
+            </div>
+            <div className="flex overflow-x-auto gap-2 pb-1 custom-scrollbar">
+            {availableArticleCategories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedArticleCategory(cat)}
-                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap border ${
+                className={`px-3.5 py-2 rounded-full text-[11px] font-black whitespace-nowrap border transition ${
                   cat === selectedArticleCategory
-                    ? 'bg-[#19DB8A] border-[#19DB8A] text-black'
-                    : 'bg-transparent border-white/10 text-white/40'
+                    ? 'bg-[#19DB8A] border-[#19DB8A] text-black shadow-[0_10px_22px_rgba(25,219,138,0.18)]'
+                    : 'bg-[#0A0A0A] border-white/10 text-white/50'
                 }`}
               >
                 {cat}
               </button>
             ))}
+            </div>
           </div>
 
           {/* SECTION REPORTAGES VIDÉO */}
@@ -490,6 +525,17 @@ const ExplorerPage: React.FC<{ userType: UserType }> = ({ userType }) => {
                         >
                           <Share2 size={15} />
                           {r.shares}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/explorer/reportage/${r.id}`, { state: { reportage: r } });
+                          }}
+                          className="flex items-center gap-1.5 rounded-full bg-white/[0.08] px-3 py-2 text-xs font-bold text-white/65"
+                        >
+                          <MessageCircle size={15} />
+                          {r.comments || 0}
                         </button>
                       </div>
                       {canFollow && (
